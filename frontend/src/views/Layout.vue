@@ -40,6 +40,18 @@
               <span>设置</span>
             </router-link>
           </li>
+          <li>
+            <router-link to="/model-settings" @click="appStore.setCurrentView('model-settings')">
+              <i class="icon">🤖</i>
+              <span>模型设置</span>
+            </router-link>
+          </li>
+          <li>
+            <router-link to="/system/users" @click="appStore.setCurrentView('system')">
+              <i class="icon">🛠️</i>
+              <span>系统设置</span>
+            </router-link>
+          </li>
         </ul>
       </nav>
       <div class="sidebar-footer">
@@ -89,7 +101,9 @@ const currentViewTitle = computed(() => {
     'knowledge-base': '知识库管理',
     'documents': '文档管理',
     'evaluation': '系统评估',
-    'settings': '系统设置'
+    'settings': '系统设置',
+    'model-settings': '模型设置',
+    'system': '系统管理'
   }
   return viewMap[appStore.currentView] || 'ZZWZZ RAG 系统'
 })

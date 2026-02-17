@@ -79,7 +79,7 @@ class HybridRetriever:
         for r in all_results:
             if r.chunk_id not in seen:
                 seen.add(r.chunk_id)
-                unique_results.backend.append(r)
+                unique_results.append(r)
 
         return unique_results[:top_k]
 
@@ -143,7 +143,7 @@ class HybridRetriever:
         results = []
         for doc_id, content, score, meta in scored_docs[:top_k]:
             normalized_score = score / max_score
-            results.backend.append(RetrievalResult(
+            results.append(RetrievalResult(
                 chunk_id=doc_id,
                 content=content,
                 score=normalized_score,

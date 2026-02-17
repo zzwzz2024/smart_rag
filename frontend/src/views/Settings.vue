@@ -72,6 +72,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useUserStore } from '../stores/user'
+import { ElMessage } from 'element-plus'
 
 const userStore = useUserStore()
 
@@ -85,11 +86,11 @@ const changePassword = async () => {
   try {
     // 这里需要实现修改密码的API调用
     console.log('修改密码:', newPassword.value)
-    alert('密码修改成功')
+    ElMessage.success('密码修改成功')
     newPassword.value = ''
   } catch (error) {
     console.error('修改密码失败:', error)
-    alert('密码修改失败')
+    ElMessage.error('密码修改失败')
   }
 }
 
@@ -101,10 +102,10 @@ const saveSettings = () => {
       apiUrl: apiUrl.value,
       model: selectedModel.value
     })
-    alert('设置保存成功')
+    ElMessage.success('设置保存成功')
   } catch (error) {
     console.error('保存设置失败:', error)
-    alert('设置保存失败')
+    ElMessage.error('设置保存失败')
   }
 }
 

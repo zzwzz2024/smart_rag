@@ -112,13 +112,13 @@ class VectorStore:
                 distance = results["distances"][0][i]
                 score = 1 - distance  # cosine distance → similarity
 
-                # search_results.backend.app.end(SearchResult(
-                #     chunk_id=chunk_id,
-                #     content=results["documents"][0][i],
-                #     score=score,
-                #     metadata=results["metadatas"][0][i] if results["metadatas"] else {},
-                # ))
-                return SearchResult(items=raw_items)
+                search_results.append(SearchResult(
+                    chunk_id=chunk_id,
+                    content=results["documents"][0][i],
+                    score=score,
+                    metadata=results["metadatas"][0][i] if results["metadatas"] else {},
+                ))
+                # return SearchResult(items=raw_items)
 
         return search_results
 

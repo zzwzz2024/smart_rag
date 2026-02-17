@@ -162,14 +162,10 @@ const deleteConversation = async (conversationId: string) => {
   try {
     await chatStore.deleteConversation(conversationId)
   } catch (error: any) {
-    ElMessage.error('删除对话失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '删除对话失败'
+    ElMessage.error(errorMessage)
   }
-}
-
-// 开始新对话
-const startNewConversation = () => {
-  chatStore.setCurrentConversation(null)
-  selectedKnowledgeBase.value = ''
 }
 
 // 发送消息
@@ -188,7 +184,9 @@ const sendMessage = async () => {
         await chatStore.sendMessage(message, kbId)
      }
   } catch (error: any) {
-    ElMessage.error('发送消息失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '发送消息失败'
+    ElMessage.error(errorMessage)
   }
 }
 
@@ -200,7 +198,9 @@ onMounted(async () => {
       kbStore.getKnowledgeBases()
     ])
   } catch (error: any) {
-    ElMessage.error('加载数据失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '加载数据失败'
+    ElMessage.error(errorMessage)
   }
 })
 </script>
