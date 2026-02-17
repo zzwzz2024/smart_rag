@@ -28,22 +28,22 @@ class VectorStore:
 
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
+    def __init__(self,api_key=None,base_url=None,model_name=None):
         if self._initialized:
             return
-        self._initialized = True
-
+        self._initialized = False
+        logger.info(f"VectorStore初始化url:{base_url}")
         self.client = chromadb.PersistentClient(
             path=settings.CHROMA_PERSIST_DIR,
             settings=ChromaSettings(anonymized_telemetry=False),
         )
-        self.embedder = EmbeddingService()
+        self.embedder = EmbeddingService(api_key,base_url)
         logger.info("VectorStore initialized (ChromaDB)")
 
     def _get_collection(self, kb_id: str):
@@ -96,8 +96,9 @@ class VectorStore:
 
         if collection.count() == 0:
             return []
-
+        logger.info(f"query_embedding开始")
         query_embedding = self.embedder.embed_query(query)
+        logger.info(f"query_embedding完成")
 
         results = collection.query(
             query_embeddings=[query_embedding],
@@ -112,13 +113,13 @@ class VectorStore:
                 distance = results["distances"][0][i]
                 score = 1 - distance  # cosine distance → similarity
 
-                # search_results.backend.app.end(SearchResult(
-                #     chunk_id=chunk_id,
-                #     content=results["documents"][0][i],
-                #     score=score,
-                #     metadata=results["metadatas"][0][i] if results["metadatas"] else {},
-                # ))
-                return SearchResult(items=raw_items)
+                search_results.append(SearchResult(
+                    chunk_id=chunk_id,
+                    content=results["documents"][0][i],
+                    score=score,
+                    metadata=results["metadatas"][0][i] if results["metadatas"] else {},
+                ))
+                # return SearchResult(items=raw_items)
 
         return search_results
 

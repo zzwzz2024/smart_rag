@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # ---- LLM ----
     OPENAI_PROVIDER: str = "openai"
-    OPENAI_API_KEY: str = "sk-f7758e4555e045fdb02d12579fee29b5"
+    OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     LLM_MODEL: str = "qwen3-max"
     EMBEDDING_MODEL: str = "text-embedding-v1"

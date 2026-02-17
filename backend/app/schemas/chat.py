@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     kb_ids: List[str] = []                    # 搜索哪些知识库
     model: Optional[str] = None
+    model_id: Optional[str] = None
     temperature: Optional[float] = None
     top_k: Optional[int] = None
     stream: bool = False
@@ -40,6 +41,7 @@ class ConversationResponse(BaseModel):
     id: str
     title: str
     kb_id: Optional[str]
+    pinned: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -47,16 +49,29 @@ class ConversationResponse(BaseModel):
         from_attributes = True
 
 
+from pydantic import field_validator
+
 class MessageResponse(BaseModel):
     id: str
     role: str
     content: str
-    citations: Optional[dict]
+    citations: Optional[List[dict]]
     confidence: Optional[float]
     created_at: datetime
 
     class Config:
         from_attributes = True
+    
+    @field_validator('citations', mode='before')
+    @classmethod
+    def parse_citations(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except:
+                return None
+        return v
 
 
 class FeedbackRequest(BaseModel):

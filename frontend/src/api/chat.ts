@@ -7,6 +7,7 @@ export const chatApi = {
     conversation_id?: string
     query: string
     kb_ids?: string[]
+    model_id?: string
   }) {
     return request<ChatMessage>({
       url: `/chat`,
@@ -36,6 +37,33 @@ export const chatApi = {
     return request({
       url: `/chat/conversations/${conversationId}`,
       method: 'delete'
+    })
+  },
+
+  // 更新对话标题
+  updateConversationTitle(conversationId: string, title: string) {
+    return request({
+      url: `/chat/conversations/${conversationId}/title`,
+      method: 'put',
+      data: { title }
+    })
+  },
+
+  // 切换对话置顶状态
+  toggleConversationPinned(conversationId: string, pinned: boolean) {
+    return request({
+      url: `/chat/conversations/${conversationId}/pinned`,
+      method: 'put',
+      data: { pinned }
+    })
+  },
+
+  // 初始化模型
+  initializeModel(modelId: string) {
+    return request({
+      url: `/chat/initialize-model`,
+      method: 'post',
+      data: { model_id: modelId }
     })
   }
 }

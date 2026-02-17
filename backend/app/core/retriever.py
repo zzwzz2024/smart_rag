@@ -17,7 +17,6 @@ from backend.app.config import get_settings
 
 settings = get_settings()
 
-
 @dataclass
 class RetrievalResult:
     """检索结果 (含融合分数)"""
@@ -32,14 +31,14 @@ class RetrievalResult:
 class HybridRetriever:
     """混合检索器"""
 
-    def __init__(self):
-        self.vector_store = VectorStore()
+    def __init__(self,api_key=None,base_url=None,model_name=None):
+        self.vector_store = VectorStore(api_key,base_url,model_name)
 
     async def retrieve(
         self,
         query: str,
         kb_ids: List[str],
-        top_k: int = 20,
+        top_k: int = 10,
         mode: str = "hybrid",     # vector / keyword / hybrid
         vector_weight: float = 0.7,
         keyword_weight: float = 0.3,
@@ -79,7 +78,7 @@ class HybridRetriever:
         for r in all_results:
             if r.chunk_id not in seen:
                 seen.add(r.chunk_id)
-                unique_results.backend.append(r)
+                unique_results.append(r)
 
         return unique_results[:top_k]
 
@@ -93,7 +92,9 @@ class HybridRetriever:
         self, query: str, kb_id: str, top_k: int
     ) -> List[RetrievalResult]:
         """向量语义检索"""
+        logger.info("_vector_search开始")
         results = self.vector_store.search(kb_id, query, top_k=top_k)
+        logger.info("_vector_search完成")
         return [
             RetrievalResult(
                 chunk_id=r.chunk_id,
@@ -105,6 +106,7 @@ class HybridRetriever:
             )
             for r in results
         ]
+
 
     def _keyword_search(
         self, query: str, kb_id: str, top_k: int
@@ -143,7 +145,7 @@ class HybridRetriever:
         results = []
         for doc_id, content, score, meta in scored_docs[:top_k]:
             normalized_score = score / max_score
-            results.backend.append(RetrievalResult(
+            results.append(RetrievalResult(
                 chunk_id=doc_id,
                 content=content,
                 score=normalized_score,
@@ -165,8 +167,10 @@ class HybridRetriever:
         """混合检索 + RRF 融合"""
         # 两路召回
         vector_results = self._vector_search(query, kb_id, top_k)
+        logger.info("vector_results向量检索完成")
         keyword_results = self._keyword_search(query, kb_id, top_k)
-
+        logger.info("keywords检索完成")
+        logger.info("两路召回向量检索完成")
         # RRF 融合
         return self._rrf_fusion(
             vector_results,
@@ -222,7 +226,7 @@ class HybridRetriever:
             key=lambda x: x["rrf_score"],
             reverse=True,
         )
-
+        logger.info("两路召回完成")
         return [
             RetrievalResult(
                 chunk_id=item["result"].chunk_id,

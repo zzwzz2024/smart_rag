@@ -1,5 +1,13 @@
 <template>
   <div class="chat-container">
+<!--    <div class="chat-header-top">-->
+<!--      <h1>ZZZWZ RAG</h1>-->
+<!--      <div class="top-actions">-->
+<!--        <button class="btn btn-secondary" @click="toggleDarkMode">-->
+<!--          切换暗色模式-->
+<!--        </button>-->
+<!--      </div>-->
+<!--    </div>-->
     <div class="chat-wrapper">
       <!-- 左侧对话历史 -->
       <div class="chat-history">
@@ -13,19 +21,38 @@
             @click="selectConversation(conversation)"
           >
             <div class="conversation-info">
-              <div class="conversation-title">
-                {{ getConversationTitle(conversation) }}
+              <div class="conversation-title" @dblclick="startRenameConversation(conversation)">
+                <span v-if="editingConversationId !== conversation.id">{{ getConversationTitle(conversation) }}</span>
+                <input
+                  v-else
+                  v-model="editTitle"
+                  class="conversation-title-input"
+                  @blur="finishRenameConversation"
+                  @keyup.enter="finishRenameConversation"
+                  @keyup.esc="cancelRenameConversation"
+                  ref="titleInputRef"
+                />
               </div>
               <div class="conversation-time">
                 {{ formatTime(conversation.created_at) }}
               </div>
             </div>
-            <button
-              class="delete-conversation-btn"
-              @click.stop="deleteConversation(conversation.id as string)"
-            >
-              🗑️
-            </button>
+            <div class="conversation-actions">
+              <button
+                class="pin-conversation-btn"
+                @click.stop="togglePinConversation(conversation)"
+                :title="conversation.pinned ? '取消置顶' : '置顶对话'"
+              >
+                {{ conversation.pinned ? '📌' : '📌' }}
+              </button>
+              <button
+                class="delete-conversation-btn"
+                @click.stop="deleteConversation(conversation.id as string)"
+                title="删除对话"
+              >
+                🗑️
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -34,7 +61,8 @@
       <div class="chat-main">
         <!-- 聊天头部 -->
         <div class="chat-header">
-          <h3>{{ chatStore.currentConversation ? '正在聊天' : '新对话' }}</h3>
+<!--          <h3>{{ chatStore.currentConversation ? '正在聊天' : '新对话' }}</h3>-->
+          <h3>{{ chatStore.currentConversation ? `正在与${getConversationTitle(chatStore.currentConversation)}聊天` : '新对话' }}</h3>
           <div class="chat-actions">
             <select
               v-model="selectedKnowledgeBase"
@@ -49,8 +77,21 @@
                 {{ kb.name }}
               </option>
             </select>
+            <select
+              v-model="selectedModel"
+              class="model-select"
+            >
+              <option value="">选择模型</option>
+              <option
+                v-for="model in modelStore.chatModels"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.name }}
+              </option>
+            </select>
             <button
-              class="btn btn-secondary"
+              class="btn btn-primary"
               @click="startNewConversation"
             >
               新对话
@@ -124,17 +165,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useKbStore } from '../stores/kb'
+import { useModelStore } from '../stores/model'
 import { ElMessage } from 'element-plus'
+import { chatApi } from '../api/chat'
 import type { Conversation } from '../types'
 
 const chatStore = useChatStore()
 const kbStore = useKbStore()
+const modelStore = useModelStore()
 
 const inputMessage = ref('')
 const selectedKnowledgeBase = ref<string | ''>('')
+const selectedModel = ref<string | ''>('')
+
+// 对话重命名相关
+const editingConversationId = ref<string | null>(null)
+const editTitle = ref('')
+const titleInputRef = ref<HTMLInputElement | null>(null)
 
 // 获取对话标题
 const getConversationTitle = (conversation: Conversation): string => {
@@ -153,8 +203,15 @@ const formatTime = (timeString: string): string => {
 }
 
 // 选择对话
-const selectConversation = (conversation: Conversation) => {
-  chatStore.setCurrentConversation(conversation)
+const selectConversation = async (conversation: Conversation) => {
+  try {
+    // 加载对话的历史消息
+    await chatStore.getConversation(conversation.id)
+    // 设置当前对话
+    chatStore.setCurrentConversation(conversation)
+  } catch (error) {
+    console.error('加载对话历史失败:', error)
+  }
 }
 
 // 删除对话
@@ -162,14 +219,47 @@ const deleteConversation = async (conversationId: string) => {
   try {
     await chatStore.deleteConversation(conversationId)
   } catch (error: any) {
-    ElMessage.error('删除对话失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '删除对话失败'
+    ElMessage.error(errorMessage)
   }
 }
 
-// 开始新对话
-const startNewConversation = () => {
-  chatStore.setCurrentConversation(null)
-  selectedKnowledgeBase.value = ''
+// 开始重命名对话
+const startRenameConversation = (conversation: Conversation) => {
+  editingConversationId.value = conversation.id
+  editTitle.value = conversation.title
+  // 在下一个DOM更新周期聚焦输入框
+  setTimeout(() => {
+    titleInputRef.value?.focus()
+    titleInputRef.value?.select()
+  }, 100)
+}
+
+// 完成重命名对话
+const finishRenameConversation = async () => {
+  if (editingConversationId.value && editTitle.value.trim()) {
+    try {
+      await chatStore.updateConversationTitle(editingConversationId.value, editTitle.value.trim())
+    } catch (error) {
+      console.error('更新对话标题失败:', error)
+    }
+  }
+  editingConversationId.value = null
+}
+
+// 取消重命名对话
+const cancelRenameConversation = () => {
+  editingConversationId.value = null
+}
+
+// 切换对话置顶状态
+const togglePinConversation = async (conversation: Conversation) => {
+  try {
+    await chatStore.toggleConversationPinned(conversation.id, !conversation.pinned)
+  } catch (error) {
+    console.error('切换对话置顶状态失败:', error)
+  }
 }
 
 // 发送消息
@@ -181,26 +271,73 @@ const sendMessage = async () => {
 
   try {
     const kbId = selectedKnowledgeBase.value !== '' ? selectedKnowledgeBase.value : undefined
+    const modelId = selectedModel.value !== '' ? selectedModel.value : undefined
 
-     if (!kbId || typeof kbId !== 'string' || kbId.trim() === '') {
-        ElMessage.error('请先选择一个知识库')
-     }else {
-        await chatStore.sendMessage(message, kbId)
-     }
+    if (!kbId || typeof kbId !== 'string' || kbId.trim() === '') {
+      ElMessage.error('请先选择一个知识库')
+    } else if (!modelId || typeof modelId !== 'string' || modelId.trim() === '') {
+      ElMessage.error('请先选择一个模型，如果没有可用模型，请前往模型设置页面配置')
+    } else {
+      await chatStore.sendMessage(message, kbId, modelId)
+    }
   } catch (error: any) {
-    ElMessage.error('发送消息失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '发送消息失败'
+    ElMessage.error(errorMessage)
   }
 }
+
+// 开始新对话
+const startNewConversation = () => {
+  chatStore.setCurrentConversation(null)
+  inputMessage.value = ''
+  selectedKnowledgeBase.value = ''
+  selectedModel.value = ''
+}
+
+// 切换暗色模式
+const toggleDarkMode = () => {
+  const body = document.body
+  body.classList.toggle('dark-mode')
+  // 这里可以添加保存暗色模式设置的逻辑
+  localStorage.setItem('darkMode', body.classList.contains('dark-mode') ? 'true' : 'false')
+}
+
+// 监听模型选择变化
+watch(selectedModel, async (newModelId) => {
+  if (newModelId) {
+    try {
+      // 从modelStore中获取模型详情
+      const model = modelStore.chatModels.find(m => m.id === newModelId)
+      if (model) {
+        console.log('初始化模型:', model.name)
+        // 调用后端API来初始化模型
+        await chatApi.initializeModel(newModelId)
+        console.log('模型初始化成功')
+      }
+    } catch (error) {
+      console.error('初始化模型失败:', error)
+    }
+  }
+})
 
 // 加载对话历史和知识库列表
 onMounted(async () => {
   try {
     await Promise.all([
       chatStore.getConversations(),
-      kbStore.getKnowledgeBases()
+      kbStore.getKnowledgeBases(),
+      modelStore.getChatModels()
     ])
+    
+    // 自动选择第一个对话并加载历史记录
+    if (chatStore.conversations.length > 0) {
+      await selectConversation(chatStore.conversations[0])
+    }
   } catch (error: any) {
-    ElMessage.error('加载数据失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '加载数据失败'
+    ElMessage.error(errorMessage)
   }
 })
 </script>
@@ -210,6 +347,62 @@ onMounted(async () => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.chat-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background-color: #f8f9fa;
+  color: #333;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.chat-header-top h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.top-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.top-actions .btn {
+  padding: 6px 12px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.top-actions .btn-secondary {
+  background-color: #6c757d;
+  color: white;
+  border: 1px solid #6c757d;
+}
+
+.top-actions .btn-secondary:hover {
+  background-color: #5a6268;
+  border-color: #545b62;
+}
+
+body.dark-mode .top-actions .btn-secondary {
+  background-color: #495057;
+  border-color: #495057;
+}
+
+body.dark-mode .top-actions .btn-secondary:hover {
+  background-color: #343a40;
+  border-color: #23272b;
+}
+
+body.dark-mode .chat-header-top {
+  background-color: #343a40;
+  color: #e0e0e0;
+  border-bottom: 1px solid #404040;
 }
 
 .chat-wrapper {
@@ -274,6 +467,21 @@ onMounted(async () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.conversation-title:hover {
+  text-decoration: underline;
+}
+
+.conversation-title-input {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 2px 4px;
+  border: 1px solid #2196f3;
+  border-radius: 3px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .conversation-time {
@@ -281,6 +489,13 @@ onMounted(async () => {
   color: #666;
 }
 
+.conversation-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.pin-conversation-btn,
 .delete-conversation-btn {
   background: none;
   border: none;
@@ -289,10 +504,16 @@ onMounted(async () => {
   border-radius: 4px;
   transition: all 0.2s ease;
   opacity: 0.5;
+  font-size: 14px;
 }
 
+.conversation-item:hover .pin-conversation-btn,
 .conversation-item:hover .delete-conversation-btn {
   opacity: 1;
+}
+
+.pin-conversation-btn:hover {
+  background-color: #fff3e0;
 }
 
 .delete-conversation-btn:hover {
@@ -329,7 +550,8 @@ onMounted(async () => {
   align-items: center;
 }
 
-.kb-select {
+.kb-select,
+.model-select {
   padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -477,12 +699,157 @@ onMounted(async () => {
   color: #666;
 }
 
+.btn-primary {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 8px 20px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  background-color: #45a049;
+}
+
+.btn-primary:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
 .send-btn {
   padding: 8px 20px;
   font-size: 14px;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+/* 暗色模式 */
+body.dark-mode {
+  background-color: #dc3545;
+  color: #e0e0e0;
+}
+
+body.dark-mode .chat-container {
+  background-color: #dc3545;
+}
+
+body.dark-mode .chat-history,
+body.dark-mode .chat-main {
+  background-color: #2d2d2d;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-mode .chat-history h3,
+body.dark-mode .chat-header {
+  border-bottom: 1px solid #404040;
+}
+
+body.dark-mode .conversation-item {
+  background-color: #333333;
+}
+
+body.dark-mode .conversation-item:hover {
+  background-color: #3d3d3d;
+}
+
+body.dark-mode .conversation-item.active {
+  background-color: #1e3a5f;
+  border-left: 3px solid #3b82f6;
+}
+
+body.dark-mode .conversation-title-input {
+  background-color: #404040;
+  border: 1px solid #3b82f6;
+  color: #e0e0e0;
+}
+
+body.dark-mode .conversation-time {
+  color: #a0a0a0;
+}
+
+body.dark-mode .kb-select,
+body.dark-mode .model-select {
+  background-color: #404040;
+  border: 1px solid #505050;
+  color: #e0e0e0;
+}
+
+body.dark-mode .chat-message-user {
+  background-color: #1e3a5f;
+}
+
+body.dark-mode .chat-message-bot {
+  background-color: #333333;
+}
+
+body.dark-mode .confidence-badge {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #a0a0a0;
+}
+
+body.dark-mode .citations {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+body.dark-mode .citations h4 {
+  color: #a0a0a0;
+}
+
+body.dark-mode .citation-source {
+  color: #3b82f6;
+}
+
+body.dark-mode .citation-content {
+  color: #a0a0a0;
+}
+
+body.dark-mode .chat-message-time {
+  color: #808080;
+}
+
+body.dark-mode .loading-message {
+  background-color: #333333;
+}
+
+body.dark-mode .empty-chat {
+  color: #a0a0a0;
+}
+
+body.dark-mode .message-input {
+  background-color: #404040;
+  border: 1px solid #505050;
+  color: #e0e0e0;
+}
+
+body.dark-mode .message-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+body.dark-mode .input-info {
+  color: #a0a0a0;
+}
+
+body.dark-mode .btn {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+}
+
+body.dark-mode .btn:hover {
+  background-color: #2563eb;
+}
+
+body.dark-mode .btn-secondary {
+  background-color: #4b5563;
+}
+
+body.dark-mode .btn-secondary:hover {
+  background-color: #374151;
 }
 
 /* 响应式设计 */

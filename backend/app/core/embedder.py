@@ -15,28 +15,30 @@ class EmbeddingService:
 
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
+    def __init__(self,api_key=None,base_url=None,model_name=None):
         if self._initialized:
             return
-        self._initialized = True
+        self._initialized = False
 
         if settings.USE_LOCAL_EMBEDDING:
             self._init_local_model()
         else:
-            self._init_openai_client()
+            self._init_openai_client(api_key,base_url,model_name)
 
-    def _init_openai_client(self):
+    def _init_openai_client(self,api_key=None,base_url=None,model_name=None):
         """初始化 OpenAI Embedding 客户端"""
         # from openai import OpenAI
+        logger.info(f"_init_openai_client")
         self.client = OpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_BASE_URL,
+            api_key=api_key,
+            base_url=base_url,
+            timeout = 120.0
         )
         self.model = settings.EMBEDDING_MODEL
         self.is_local = False
@@ -71,8 +73,9 @@ class EmbeddingService:
 
     def _embed_openai(self, texts: List[str]) -> List[List[float]]:
         """使用 OpenAI API"""
+        logger.info(f"_embed_openai开始")
         all_embeddings = []
-        batch_size = 100
+        batch_size = 50
 
         for i in range(0, len(texts), batch_size):
             batch = texts[i: i + batch_size]
@@ -83,6 +86,7 @@ class EmbeddingService:
             embeddings = [item.embedding for item in response.data]
             all_embeddings.extend(embeddings)
 
+        logger.info(f"_embed_openai完成")
         return all_embeddings
 
     def _embed_local(self, texts: List[str]) -> List[List[float]]:

@@ -12,14 +12,13 @@ from backend.app.config import get_settings
 
 settings = get_settings()
 
-
 class RAGPipeline:
     """RAG 全流程编排"""
 
-    def __init__(self):
-        self.retriever = HybridRetriever()
-        self.reranker = Reranker()
-        self.generator = Generator()
+    def __init__(self,api_key=None,base_url=None,model_name=None):
+        self.retriever = HybridRetriever(api_key,base_url,model_name)
+        self.reranker = Reranker(api_key,base_url,model_name)
+        self.generator = Generator(api_key,base_url,model_name)
 
     async def run(
         self,
@@ -27,6 +26,8 @@ class RAGPipeline:
         kb_ids: List[str],
         conversation_history: List[dict] = None,
         model: Optional[str] = None,
+        model_id: Optional[str] = None,
+        api_key: Optional[str] = None,
         temperature: Optional[float] = None,
         top_k: Optional[int] = None,
         retrieval_mode: str = "hybrid",
@@ -58,6 +59,7 @@ class RAGPipeline:
                 retrieved_chunks=[],
                 conversation_history=conversation_history,
                 model=model,
+                model_id=model_id,
                 temperature=temperature,
             )
 
@@ -87,6 +89,8 @@ class RAGPipeline:
             retrieved_chunks=filtered,
             conversation_history=conversation_history,
             model=model,
+            model_id=model_id,
+            api_key=api_key,
             temperature=temperature,
         )
 
@@ -104,6 +108,8 @@ class RAGPipeline:
         kb_ids: List[str],
         conversation_history: List[dict] = None,
         model: Optional[str] = None,
+        model_id: Optional[str] = None,
+        api_key: Optional[str] = None,
         temperature: Optional[float] = None,
         top_k: Optional[int] = None,
         retrieval_mode: str = "hybrid",
@@ -131,6 +137,8 @@ class RAGPipeline:
             retrieved_chunks=filtered,
             conversation_history=conversation_history,
             model=model,
+            model_id=model_id,
+            api_key=api_key,
             temperature=temperature,
         ):
             yield token

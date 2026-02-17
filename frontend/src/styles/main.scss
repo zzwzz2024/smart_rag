@@ -169,6 +169,28 @@ body {
   100% { transform: rotate(360deg); }
 }
 
+/* Element Plus 按钮样式覆盖 */
+.el-button--primary {
+  --el-button-bg-color: #4CAF50 !important;
+  --el-button-border-color: #4CAF50 !important;
+  --el-button-hover-bg-color: #45a049 !important;
+  --el-button-hover-border-color: #45a049 !important;
+  --el-button-active-bg-color: #3d8b40 !important;
+  --el-button-active-border-color: #3d8b40 !important;
+  background-color: #4CAF50 !important;
+  border-color: #4CAF50 !important;
+}
+
+.el-button--primary:hover {
+  background-color: #45a049 !important;
+  border-color: #45a049 !important;
+}
+
+.el-button--primary:active {
+  background-color: #3d8b40 !important;
+  border-color: #3d8b40 !important;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .container {
