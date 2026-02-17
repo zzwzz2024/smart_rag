@@ -1,8 +1,8 @@
 <template>
   <div class="system-container">
-    <div class="system-header">
+    <!-- <div class="system-header">
       <h2>系统管理</h2>
-    </div>
+    </div> -->
     
     <div class="system-nav">
       <el-menu
@@ -93,6 +93,9 @@ onMounted(() => {
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   margin-bottom: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
 .system-menu {

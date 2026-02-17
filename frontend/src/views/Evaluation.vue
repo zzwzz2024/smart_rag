@@ -1,7 +1,7 @@
 <template>
   <div class="evaluation-container">
     <div class="evaluation-header">
-      <h2>系统评估</h2>
+      <h2>知识库评估</h2>
       <button class="btn btn-primary" @click="showCreateModal = true">
         创建评估
       </button>

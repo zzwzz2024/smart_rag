@@ -187,7 +187,8 @@ export const useChatStore = defineStore('chat', {
 
     setCurrentConversation(conversation: Conversation | null) {
       this.currentConversation = conversation
-      this.messages = conversation?.messages || []
+      // 不要覆盖已加载的消息，只在conversation有messages属性时使用
+      // this.messages = conversation?.messages || []
     }
   }
 })

@@ -1,6 +1,6 @@
 <template>
   <div class="model-settings-container">
-    <h2>模型设置</h2>
+    <h2>模型管理</h2>
     
     <!-- 模型类型切换 -->
     <div class="model-type-tabs">

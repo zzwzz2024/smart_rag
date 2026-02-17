@@ -1,5 +1,13 @@
 <template>
   <div class="chat-container">
+<!--    <div class="chat-header-top">-->
+<!--      <h1>ZZZWZ RAG</h1>-->
+<!--      <div class="top-actions">-->
+<!--        <button class="btn btn-secondary" @click="toggleDarkMode">-->
+<!--          切换暗色模式-->
+<!--        </button>-->
+<!--      </div>-->
+<!--    </div>-->
     <div class="chat-wrapper">
       <!-- 左侧对话历史 -->
       <div class="chat-history">
@@ -83,7 +91,7 @@
               </option>
             </select>
             <button
-              class="btn btn-secondary"
+              class="btn btn-primary"
               @click="startNewConversation"
             >
               新对话
@@ -279,6 +287,22 @@ const sendMessage = async () => {
   }
 }
 
+// 开始新对话
+const startNewConversation = () => {
+  chatStore.setCurrentConversation(null)
+  inputMessage.value = ''
+  selectedKnowledgeBase.value = ''
+  selectedModel.value = ''
+}
+
+// 切换暗色模式
+const toggleDarkMode = () => {
+  const body = document.body
+  body.classList.toggle('dark-mode')
+  // 这里可以添加保存暗色模式设置的逻辑
+  localStorage.setItem('darkMode', body.classList.contains('dark-mode') ? 'true' : 'false')
+}
+
 // 监听模型选择变化
 watch(selectedModel, async (newModelId) => {
   if (newModelId) {
@@ -305,6 +329,11 @@ onMounted(async () => {
       kbStore.getKnowledgeBases(),
       modelStore.getChatModels()
     ])
+    
+    // 自动选择第一个对话并加载历史记录
+    if (chatStore.conversations.length > 0) {
+      await selectConversation(chatStore.conversations[0])
+    }
   } catch (error: any) {
     // 提取详细错误信息
     const errorMessage = error.response?.data?.detail || '加载数据失败'
@@ -318,6 +347,62 @@ onMounted(async () => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.chat-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background-color: #f8f9fa;
+  color: #333;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.chat-header-top h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.top-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.top-actions .btn {
+  padding: 6px 12px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.top-actions .btn-secondary {
+  background-color: #6c757d;
+  color: white;
+  border: 1px solid #6c757d;
+}
+
+.top-actions .btn-secondary:hover {
+  background-color: #5a6268;
+  border-color: #545b62;
+}
+
+body.dark-mode .top-actions .btn-secondary {
+  background-color: #495057;
+  border-color: #495057;
+}
+
+body.dark-mode .top-actions .btn-secondary:hover {
+  background-color: #343a40;
+  border-color: #23272b;
+}
+
+body.dark-mode .chat-header-top {
+  background-color: #343a40;
+  color: #e0e0e0;
+  border-bottom: 1px solid #404040;
 }
 
 .chat-wrapper {
@@ -614,12 +699,157 @@ onMounted(async () => {
   color: #666;
 }
 
+.btn-primary {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 8px 20px;
+  font-size: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  background-color: #45a049;
+}
+
+.btn-primary:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
 .send-btn {
   padding: 8px 20px;
   font-size: 14px;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+/* 暗色模式 */
+body.dark-mode {
+  background-color: #dc3545;
+  color: #e0e0e0;
+}
+
+body.dark-mode .chat-container {
+  background-color: #dc3545;
+}
+
+body.dark-mode .chat-history,
+body.dark-mode .chat-main {
+  background-color: #2d2d2d;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-mode .chat-history h3,
+body.dark-mode .chat-header {
+  border-bottom: 1px solid #404040;
+}
+
+body.dark-mode .conversation-item {
+  background-color: #333333;
+}
+
+body.dark-mode .conversation-item:hover {
+  background-color: #3d3d3d;
+}
+
+body.dark-mode .conversation-item.active {
+  background-color: #1e3a5f;
+  border-left: 3px solid #3b82f6;
+}
+
+body.dark-mode .conversation-title-input {
+  background-color: #404040;
+  border: 1px solid #3b82f6;
+  color: #e0e0e0;
+}
+
+body.dark-mode .conversation-time {
+  color: #a0a0a0;
+}
+
+body.dark-mode .kb-select,
+body.dark-mode .model-select {
+  background-color: #404040;
+  border: 1px solid #505050;
+  color: #e0e0e0;
+}
+
+body.dark-mode .chat-message-user {
+  background-color: #1e3a5f;
+}
+
+body.dark-mode .chat-message-bot {
+  background-color: #333333;
+}
+
+body.dark-mode .confidence-badge {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #a0a0a0;
+}
+
+body.dark-mode .citations {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+body.dark-mode .citations h4 {
+  color: #a0a0a0;
+}
+
+body.dark-mode .citation-source {
+  color: #3b82f6;
+}
+
+body.dark-mode .citation-content {
+  color: #a0a0a0;
+}
+
+body.dark-mode .chat-message-time {
+  color: #808080;
+}
+
+body.dark-mode .loading-message {
+  background-color: #333333;
+}
+
+body.dark-mode .empty-chat {
+  color: #a0a0a0;
+}
+
+body.dark-mode .message-input {
+  background-color: #404040;
+  border: 1px solid #505050;
+  color: #e0e0e0;
+}
+
+body.dark-mode .message-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+body.dark-mode .input-info {
+  color: #a0a0a0;
+}
+
+body.dark-mode .btn {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+}
+
+body.dark-mode .btn:hover {
+  background-color: #2563eb;
+}
+
+body.dark-mode .btn-secondary {
+  background-color: #4b5563;
+}
+
+body.dark-mode .btn-secondary:hover {
+  background-color: #374151;
 }
 
 /* 响应式设计 */
