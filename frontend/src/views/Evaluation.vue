@@ -1,7 +1,7 @@
 <template>
   <div class="evaluation-container">
     <div class="evaluation-header">
-      <h2>系统评估</h2>
+      <h2>知识库评估</h2>
       <button class="btn btn-primary" @click="showCreateModal = true">
         创建评估
       </button>
@@ -127,7 +127,9 @@ const getEvaluations = async () => {
     const response = await evaluationApi.getEvaluations()
     evaluations.value = response.data || response
   } catch (error: any) {
-    ElMessage.error('获取评估列表失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '获取评估列表失败'
+    ElMessage.error(errorMessage)
   } finally {
     isLoading.value = false
   }
@@ -152,7 +154,9 @@ const createEvaluation = async () => {
     selectedKnowledgeBase.value = ''
     ElMessage.success('创建评估成功')
   } catch (error: any) {
-    ElMessage.error('创建评估失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '创建评估失败'
+    ElMessage.error(errorMessage)
   } finally {
     isLoading.value = false
   }
@@ -175,7 +179,9 @@ const deleteEvaluation = async (evalId: number) => {
         evaluations.value = evaluations.value.filter(evaluation => evaluation.id !== evalId)
         ElMessage.success('删除评估成功')
       } catch (error: any) {
-        ElMessage.error('删除评估失败: ' + (error.message || '未知错误'))
+        // 提取详细错误信息
+        const errorMessage = error.response?.data?.detail || '删除评估失败'
+        ElMessage.error(errorMessage)
       }
     })
     .catch(() => {

@@ -289,7 +289,9 @@ const uploadDocument = async () => {
     console.log('模态框已关闭')
   } catch (error: any) {
     console.error('上传文档失败:', error)
-    ElMessage.error('上传文档失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '上传文档失败'
+    ElMessage.error(errorMessage)
   }
 }
 
@@ -322,7 +324,9 @@ const viewDocument = async (doc: any) => {
     documentChunks.value = chunks
     showDocumentModal.value = true
   } catch (error: any) {
-    ElMessage.error('获取文档内容失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '获取文档内容失败'
+    ElMessage.error(errorMessage)
   } finally {
     isLoadingDocument.value = false
   }
@@ -334,8 +338,10 @@ const searchDocuments = async () => {
   
   try {
     const res = await kbStore.getDocuments(selectedKnowledgeBase.value, searchParams.value);
-  } catch (error) {
-    ElMessage.error('查询文档失败: ' + (error.message || '未知错误'))
+  } catch (error: any) {
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '查询文档失败'
+    ElMessage.error(errorMessage)
   }
 }
 

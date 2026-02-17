@@ -7,12 +7,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
+from backend.app.core.embedder import EmbeddingService
 from backend.app.models.conversation import Conversation, Message
+from backend.app.models.model import Model
 from backend.app.core.rag_pipeline import RAGPipeline
 from backend.app.schemas.chat import ChatRequest, ChatResponse, Citation
 
-rag_pipeline = RAGPipeline()
+rag_pipeline = None
 
+def get_rag_pipeline(api_key=None, base_url=None):
+    """获取 RAGPipeline 实例，支持惰性初始化"""
+    global rag_pipeline
+    if rag_pipeline is None:
+        rag_pipeline = RAGPipeline(api_key=api_key, base_url=base_url)
+    return rag_pipeline
 
 async def chat(
     db: AsyncSession,
@@ -20,7 +28,7 @@ async def chat(
     user_id: str,
 ) -> ChatResponse:
     """处理用户聊天请求"""
-
+    global g_rag_pipeline
     # 获取或创建对话
     if request.conversation_id:
         result = await db.execute(
@@ -55,14 +63,35 @@ async def chat(
     # 获取对话历史
     history = await _get_conversation_history(db, conversation.id)
 
+    # 如果提供了 model_id，从数据库获取模型详情
+    model_name = request.model
+    api_key = ""
+    base_url = ""
+    if request.model_id:
+        try:
+            model_result = await db.execute(
+                select(Model).where(Model.id == request.model_id, Model.is_active == True)
+            )
+            model = model_result.scalar_one_or_none()
+            if model:
+                model_name = model.model
+                api_key = model.api_key
+                base_url = model.base_url
+        except Exception as e:
+            logger.error(f"Failed to fetch model: {e}")
+
+    rag_pipeline = get_rag_pipeline(api_key=api_key, base_url=base_url)
+    # EmbeddingService(api_key, base_url)
     # 调用 RAG Pipeline
     result = await rag_pipeline.run(
         query=request.query,
         kb_ids=request.kb_ids,
         conversation_history=history,
-        model=request.model,
+        model=model_name,
+        api_key=api_key,
+        # model_id=request.model_id,
         temperature=request.temperature,
-        top_k=request.top_k,
+        top_k=request.top_k
     )
 
     # 保存 AI 回复

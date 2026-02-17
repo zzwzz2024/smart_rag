@@ -42,6 +42,44 @@ const router = createRouter({
           path: 'settings',
           name: 'Settings',
           component: () => import('../views/Settings.vue')
+        },
+        {
+          path: 'model-settings',
+          name: 'ModelSettings',
+          component: () => import('../views/ModelSettings.vue')
+        },
+        // 系统设置一级菜单及其二级菜单
+        {
+          path: 'system',
+          name: 'System',
+          component: () => import('../views/system/Index.vue'),
+          children: [
+            {
+              path: 'users',
+              name: 'SystemUsers',
+              component: () => import('../views/system/UserManagement.vue')
+            },
+            {
+              path: 'roles',
+              name: 'SystemRoles',
+              component: () => import('../views/system/RoleManagement.vue')
+            },
+            {
+              path: 'menus',
+              name: 'SystemMenus',
+              component: () => import('../views/system/MenuManagement.vue')
+            },
+            {
+              path: 'permissions',
+              name: 'SystemPermissions',
+              component: () => import('../views/system/PermissionManagement.vue')
+            },
+            {
+              path: 'dictionaries',
+              name: 'SystemDictionaries',
+              component: () => import('../views/system/DictionaryManagement.vue')
+            }
+          ]
         }
       ]
     }

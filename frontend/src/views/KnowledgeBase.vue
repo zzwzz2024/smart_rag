@@ -145,7 +145,9 @@ const createKnowledgeBase = async () => {
     newKbDescription.value = ''
     ElMessage.success('创建知识库成功')
   } catch (error: any) {
-    ElMessage.error('创建知识库失败: ' + (error.message || '未知错误'))
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '创建知识库失败'
+    ElMessage.error(errorMessage)
   }
 }
 
@@ -159,8 +161,10 @@ const formatTime = (timeString: string): string => {
 onMounted(async () => {
   try {
     await kbStore.getKnowledgeBases()
-  } catch (error) {
-    console.error('加载知识库列表失败:', error)
+  } catch (error: any) {
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '加载知识库列表失败'
+    ElMessage.error(errorMessage)
   }
 })
 </script>

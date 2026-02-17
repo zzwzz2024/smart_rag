@@ -7,11 +7,11 @@ from typing import List, Optional, Dict, AsyncGenerator
 from dataclasses import dataclass
 from openai import OpenAI
 from loguru import logger
+
 from backend.app.core.retriever import RetrievalResult
 from backend.app.config import get_settings
 
 settings = get_settings()
-
 
 @dataclass
 class GenerationResult:
@@ -26,11 +26,36 @@ class GenerationResult:
 class Generator:
     """内容生成器"""
 
-    def __init__(self):
-        self.client = OpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_BASE_URL,
+    def __init__(self,api_key=None,base_url=None,model_name=None):
+        self.clients = {}  # 存储不同模型的客户端
+        print(f"Generator函数初始化")
+        self.default_client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=120.0
         )
+        print(f"Generator函数初始化完成")
+
+    def _get_or_create_client(self, model_id: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None) -> OpenAI:
+        """
+        获取或创建对应模型的客户端
+        """
+        # 使用model_id作为客户端的键
+        client_key = model_id or model or "default"
+        
+        if client_key not in self.clients:
+            # 使用传递的api_key或默认api_key
+            current_api_key = api_key or settings.OPENAI_API_KEY
+            # 这里可以根据model_id从数据库获取模型配置
+            # 例如，获取模型的base_url等
+            self.clients[client_key] = OpenAI(
+                api_key=current_api_key,
+                base_url=settings.OPENAI_BASE_URL,
+            )
+            logger.info(f"Created new client for model: {client_key}")
+        
+        logger.info(f"Using client for model: {client_key}")
+        return self.clients[client_key]
 
     async def generate(
         self,
@@ -38,6 +63,8 @@ class Generator:
         retrieved_chunks: List[RetrievalResult],
         conversation_history: List[dict] = None,
         model: Optional[str] = None,
+        model_id: Optional[str] = None,
+        api_key: Optional[str] = None,
         temperature: Optional[float] = None,
     ) -> GenerationResult:
         """
@@ -55,7 +82,10 @@ class Generator:
         messages = self._build_messages(query, context, conversation_history or [])
 
         try:
-            response = self.client.chat.completions.create(
+            # 获取或创建对应模型的客户端
+            client = self._get_or_create_client(model_id, model, api_key)
+            
+            response = client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=temperature,
@@ -168,6 +198,8 @@ class Generator:
         retrieved_chunks: List[RetrievalResult],
         conversation_history: List[dict] = None,
         model: Optional[str] = None,
+        model_id: Optional[str] = None,
+        api_key: Optional[str] = None,
         temperature: Optional[float] = None,
     ) -> AsyncGenerator[str, None]:
         """
@@ -183,7 +215,10 @@ class Generator:
         messages = self._build_messages(query, context, conversation_history or [])
 
         try:
-            stream = self.client.chat.completions.create(
+            # 获取或创建对应模型的客户端
+            client = self._get_or_create_client(model_id, model, api_key)
+            
+            stream = client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=temperature,
