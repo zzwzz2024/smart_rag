@@ -85,13 +85,7 @@ export const useChatStore = defineStore('chat', {
           conversation_id: chatResponse.conversation_id,
           role: 'assistant' as const,
           content: chatResponse.answer,
-          citations: chatResponse.citations?.map(c => ({
-            document_id: c.doc_id,
-            filename: c.filename,
-            chunk_id: c.chunk_id,
-            content: c.content,
-            score: c.score
-          })),
+          citations: chatResponse.citations,
           confidence: chatResponse.confidence,
           created_at: new Date().toISOString()
         }

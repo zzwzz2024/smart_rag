@@ -157,11 +157,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useKbStore } from '../stores/kb'
 import { useModelStore } from '../stores/model'
 import { ElMessage } from 'element-plus'
+import { chatApi } from '../api/chat'
 import type { Conversation } from '../types'
 
 const chatStore = useChatStore()
@@ -194,8 +195,15 @@ const formatTime = (timeString: string): string => {
 }
 
 // 选择对话
-const selectConversation = (conversation: Conversation) => {
-  chatStore.setCurrentConversation(conversation)
+const selectConversation = async (conversation: Conversation) => {
+  try {
+    // 加载对话的历史消息
+    await chatStore.getConversation(conversation.id)
+    // 设置当前对话
+    chatStore.setCurrentConversation(conversation)
+  } catch (error) {
+    console.error('加载对话历史失败:', error)
+  }
 }
 
 // 删除对话
@@ -270,6 +278,24 @@ const sendMessage = async () => {
     ElMessage.error(errorMessage)
   }
 }
+
+// 监听模型选择变化
+watch(selectedModel, async (newModelId) => {
+  if (newModelId) {
+    try {
+      // 从modelStore中获取模型详情
+      const model = modelStore.chatModels.find(m => m.id === newModelId)
+      if (model) {
+        console.log('初始化模型:', model.name)
+        // 调用后端API来初始化模型
+        await chatApi.initializeModel(newModelId)
+        console.log('模型初始化成功')
+      }
+    } catch (error) {
+      console.error('初始化模型失败:', error)
+    }
+  }
+})
 
 // 加载对话历史和知识库列表
 onMounted(async () => {

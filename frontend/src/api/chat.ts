@@ -56,5 +56,14 @@ export const chatApi = {
       method: 'put',
       data: { pinned }
     })
+  },
+
+  // 初始化模型
+  initializeModel(modelId: string) {
+    return request({
+      url: `/chat/initialize-model`,
+      method: 'post',
+      data: { model_id: modelId }
+    })
   }
 }

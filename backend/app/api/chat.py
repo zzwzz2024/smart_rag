@@ -8,6 +8,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.rag_pipeline import RAGPipeline
+from backend.app.models.model import Model
 from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.models.conversation import Conversation, Message, Feedback
@@ -17,6 +19,7 @@ from backend.app.schemas.chat import (
 )
 from backend.app.utils.auth import get_current_user
 from backend.app.services.chat_service import chat as chat_service
+from backend.app.services.chat_service import rag_pipeline
 
 router = APIRouter()
 
@@ -172,3 +175,27 @@ async def toggle_conversation_pinned(
     conv.pinned = pinned.get("pinned", False)
     await db.commit()
     return {"message": "置顶状态已更新", "pinned": conv.pinned}
+
+
+@router.post("/initialize-model")
+async def initialize_model(
+    model_data: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """初始化模型"""
+    model_id = model_data.get("model_id")
+    if not model_id:
+        raise HTTPException(400, "模型ID不能为空")
+    
+    # 从数据库获取模型详情
+    result = await db.execute(
+        select(Model).where(Model.id == model_id, Model.is_active == True)
+    )
+    model = result.scalar_one_or_none()
+    if not model:
+        raise HTTPException(404, "模型不存在或未激活")
+
+    chat_service.rag_pipeline = RAGPipeline(api_key=model.api_key,base_url=model.base_url)
+
+    return {"message": f"模型 {model.name} 配置验证成功", "model_id": model_id, "model": model.model}

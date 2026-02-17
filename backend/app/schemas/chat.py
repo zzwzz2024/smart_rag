@@ -49,16 +49,29 @@ class ConversationResponse(BaseModel):
         from_attributes = True
 
 
+from pydantic import field_validator
+
 class MessageResponse(BaseModel):
     id: str
     role: str
     content: str
-    citations: Optional[dict]
+    citations: Optional[List[dict]]
     confidence: Optional[float]
     created_at: datetime
 
     class Config:
         from_attributes = True
+    
+    @field_validator('citations', mode='before')
+    @classmethod
+    def parse_citations(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except:
+                return None
+        return v
 
 
 class FeedbackRequest(BaseModel):

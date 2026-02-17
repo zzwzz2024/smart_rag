@@ -43,8 +43,8 @@ export interface Document {
 
 // 聊天消息类型
 export interface ChatMessage {
-  id: number
-  conversation_id: number
+  id: string
+  conversation_id: string
   role: 'user' | 'assistant'
   content: string
   citations?: Citation[]
@@ -54,11 +54,12 @@ export interface ChatMessage {
 
 // 引用类型
 export interface Citation {
-  document_id: number
-  filename: string
   chunk_id: string
+  doc_id: string
+  filename: string
   content: string
   score: number
+  page?: number
 }
 
 // 对话类型
