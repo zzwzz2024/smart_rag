@@ -30,18 +30,18 @@
                 </router-link>
               </li>
               <li>
+                <router-link to="/documents" @click="handleMenuClick('/documents', 'documents', '文档管理')">
+                  <i class="icon">📄</i>
+                  <span>文档管理</span>
+                </router-link>
+              </li>
+              <li>
                 <router-link to="/evaluation" @click="handleMenuClick('/evaluation', 'evaluation', '知识库评估')">
                   <i class="icon">📊</i>
                   <span>知识库评估</span>
                 </router-link>
               </li>
             </ul>
-          </li>
-          <li>
-            <router-link to="/documents" @click="handleMenuClick('/documents', 'documents', '文档')">
-              <i class="icon">📄</i>
-              <span>文档</span>
-            </router-link>
           </li>
           <li>
             <router-link to="/model-settings" @click="handleMenuClick('/model-settings', 'model-settings', '模型设置')">
@@ -212,11 +212,11 @@ const currentViewTitle = computed(() => {
 // 处理菜单点击
 const handleMenuClick = (path: string, view: string, title: string) => {
   // 点击其他菜单时，收起相应的子菜单
-  if (view !== 'system' && view !== 'knowledge-base' && view !== 'evaluation') {
+  if (view !== 'system' && view !== 'knowledge-base' && view !== 'evaluation' && view !== 'documents') {
     openSubmenu.value = null
   }
   // 点击知识库相关菜单时，保持知识库子菜单打开
-  if (view === 'knowledge-base' || view === 'evaluation') {
+  if (view === 'knowledge-base' || view === 'evaluation' || view === 'documents') {
     openSubmenu.value = 'knowledge'
   }
   appStore.setCurrentView(view)
@@ -341,7 +341,7 @@ onMounted(async () => {
     const titleMap: Record<string, string> = {
       '/chat': '聊天',
       '/knowledge-base': '知识库',
-      '/documents': '文档',
+      '/documents': '文档管理',
       '/evaluation': '知识库评估',
       '/model-settings': '模型管理',
       '/system/users': '系统设置'
