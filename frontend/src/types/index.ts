@@ -67,6 +67,7 @@ export interface Conversation {
   user_id?: string
   title: string
   kb_id?: string
+  pinned?: boolean
   created_at: string
   updated_at: string
   messages?: ChatMessage[]

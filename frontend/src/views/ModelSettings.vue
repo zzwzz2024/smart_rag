@@ -268,6 +268,7 @@ const filteredModels = computed(() => {
 const handleTabChange = (tab: string) => {
   activeTab.value = tab as 'embedding' | 'chat' | 'rerank'
   modelForm.value.type = activeTab.value
+  loadModels()
 }
 
 // 显示添加模型对话框

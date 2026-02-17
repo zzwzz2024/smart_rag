@@ -18,6 +18,7 @@ class Conversation(Base):
     )
     kb_id: Mapped[str] = mapped_column(String(36), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="新对话")
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )

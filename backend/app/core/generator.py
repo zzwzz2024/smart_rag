@@ -7,8 +7,12 @@ from typing import List, Optional, Dict, AsyncGenerator
 from dataclasses import dataclass
 from openai import OpenAI
 from loguru import logger
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.app.core.retriever import RetrievalResult
 from backend.app.config import get_settings
+from backend.app.models.model import Model
 
 settings = get_settings()
 
@@ -38,6 +42,7 @@ class Generator:
         retrieved_chunks: List[RetrievalResult],
         conversation_history: List[dict] = None,
         model: Optional[str] = None,
+        model_id: Optional[str] = None,
         temperature: Optional[float] = None,
     ) -> GenerationResult:
         """
@@ -168,6 +173,7 @@ class Generator:
         retrieved_chunks: List[RetrievalResult],
         conversation_history: List[dict] = None,
         model: Optional[str] = None,
+        model_id: Optional[str] = None,
         temperature: Optional[float] = None,
     ) -> AsyncGenerator[str, None]:
         """

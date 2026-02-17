@@ -27,6 +27,7 @@ class RAGPipeline:
         kb_ids: List[str],
         conversation_history: List[dict] = None,
         model: Optional[str] = None,
+        model_id: Optional[str] = None,
         temperature: Optional[float] = None,
         top_k: Optional[int] = None,
         retrieval_mode: str = "hybrid",
@@ -58,6 +59,7 @@ class RAGPipeline:
                 retrieved_chunks=[],
                 conversation_history=conversation_history,
                 model=model,
+                model_id=model_id,
                 temperature=temperature,
             )
 
@@ -87,6 +89,7 @@ class RAGPipeline:
             retrieved_chunks=filtered,
             conversation_history=conversation_history,
             model=model,
+            model_id=model_id,
             temperature=temperature,
         )
 
@@ -104,6 +107,7 @@ class RAGPipeline:
         kb_ids: List[str],
         conversation_history: List[dict] = None,
         model: Optional[str] = None,
+        model_id: Optional[str] = None,
         temperature: Optional[float] = None,
         top_k: Optional[int] = None,
         retrieval_mode: str = "hybrid",
@@ -131,6 +135,7 @@ class RAGPipeline:
             retrieved_chunks=filtered,
             conversation_history=conversation_history,
             model=model,
+            model_id=model_id,
             temperature=temperature,
         ):
             yield token

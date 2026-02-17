@@ -20,8 +20,13 @@ export const useChatStore = defineStore('chat', {
       try {
         const response = await chatApi.getConversations()
         const conversations = response.data || response
-        this.conversations = conversations
-        return conversations
+        // 排序：置顶的对话排在前面，然后按更新时间倒序
+        this.conversations = conversations.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1
+          if (!a.pinned && b.pinned) return 1
+          return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        })
+        return this.conversations
       } catch (error: any) {
         this.error = error.response?.data?.message || '获取对话历史失败'
         ElMessage.error(this.error)
@@ -48,14 +53,15 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async sendMessage(message: string, knowledgeBaseId?: string) {
+    async sendMessage(message: string, knowledgeBaseId?: string, modelId?: string) {
       this.isSending = true
       this.error = null
       try {
         const response = await chatApi.sendMessage({
           conversation_id: this.currentConversation?.id,
           query: message,
-          kb_ids: knowledgeBaseId ? [knowledgeBaseId] : []
+          kb_ids: knowledgeBaseId ? [knowledgeBaseId] : [],
+          model_id: modelId
         })
         const chatResponse = response.data || response
         if (chatResponse.detail) {
@@ -129,6 +135,55 @@ export const useChatStore = defineStore('chat', {
         }
       } catch (error: any) {
         this.error = error.response?.data?.message || '删除对话失败'
+        ElMessage.error(this.error)
+        throw error
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async updateConversationTitle(conversationId: string, title: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        const response = await chatApi.updateConversationTitle(conversationId, title)
+        const conversation = this.conversations.find(c => c.id === conversationId)
+        if (conversation) {
+          conversation.title = title
+        }
+        if (this.currentConversation?.id === conversationId) {
+          this.currentConversation.title = title
+        }
+        ElMessage.success('标题已更新')
+        return response
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '更新标题失败'
+        ElMessage.error(this.error)
+        throw error
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async toggleConversationPinned(conversationId: string, pinned: boolean) {
+      this.isLoading = true
+      this.error = null
+      try {
+        const response = await chatApi.toggleConversationPinned(conversationId, pinned)
+        const conversation = this.conversations.find(c => c.id === conversationId)
+        if (conversation) {
+          conversation.pinned = pinned
+        }
+        // 重新排序对话列表，置顶的对话排在前面
+        this.conversations.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1
+          if (!a.pinned && b.pinned) return 1
+          return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        })
+        ElMessage.success(pinned ? '对话已置顶' : '对话已取消置顶')
+        return response
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '切换置顶状态失败'
         ElMessage.error(this.error)
         throw error
       } finally {

@@ -30,6 +30,9 @@ async def chat(
     """发送聊天消息"""
     if not request.kb_ids:
         raise HTTPException(400, "请选择至少一个知识库")
+    
+    if not request.model_id:
+        raise HTTPException(400, "请选择一个模型，如果没有可用模型，请前往模型设置页面配置")
 
     response = await chat_service(db, request, user.id)
     return response
@@ -42,6 +45,12 @@ async def chat_stream(
     user: User = Depends(get_current_user),
 ):
     """流式聊天"""
+    if not request.kb_ids:
+        raise HTTPException(400, "请选择至少一个知识库")
+    
+    if not request.model_id:
+        raise HTTPException(400, "请选择一个模型，如果没有可用模型，请前往模型设置页面配置")
+
     from backend.app.core.rag_pipeline import RAGPipeline
     pipeline = RAGPipeline()
 
@@ -49,6 +58,7 @@ async def chat_stream(
         async for token in pipeline.run_stream(
             query=request.query,
             kb_ids=request.kb_ids,
+            model_id=request.model_id,
         ):
             yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
@@ -122,3 +132,43 @@ async def delete_conversation(
         raise HTTPException(404, "对话不存在")
     await db.delete(conv)
     return {"message": "已删除"}
+
+
+@router.put("/conversations/{conv_id}/title")
+async def update_conversation_title(
+    conv_id: str,
+    title: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """更新对话标题"""
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conv_id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv or conv.user_id != user.id:
+        raise HTTPException(404, "对话不存在")
+    
+    conv.title = title.get("title", conv.title)
+    await db.commit()
+    return {"message": "标题已更新", "title": conv.title}
+
+
+@router.put("/conversations/{conv_id}/pinned")
+async def toggle_conversation_pinned(
+    conv_id: str,
+    pinned: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """切换对话置顶状态"""
+    result = await db.execute(
+        select(Conversation).where(Conversation.id == conv_id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv or conv.user_id != user.id:
+        raise HTTPException(404, "对话不存在")
+    
+    conv.pinned = pinned.get("pinned", False)
+    await db.commit()
+    return {"message": "置顶状态已更新", "pinned": conv.pinned}

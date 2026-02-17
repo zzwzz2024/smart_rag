@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     kb_ids: List[str] = []                    # 搜索哪些知识库
     model: Optional[str] = None
+    model_id: Optional[str] = None
     temperature: Optional[float] = None
     top_k: Optional[int] = None
     stream: bool = False
@@ -40,6 +41,7 @@ class ConversationResponse(BaseModel):
     id: str
     title: str
     kb_id: Optional[str]
+    pinned: bool = False
     created_at: datetime
     updated_at: datetime
 

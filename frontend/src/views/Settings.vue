@@ -41,31 +41,31 @@
       </div>
     </div>
 
-    <div class="settings-card">
-      <h3>系统设置</h3>
-      <div class="settings-form">
-        <div class="form-group">
-          <label for="api-url">API 地址</label>
-          <input
-            type="text"
-            id="api-url"
-            v-model="apiUrl"
-            placeholder="请输入 API 地址"
-          />
-        </div>
-        <div class="form-group">
-          <label for="model-select">AI 模型</label>
-          <select id="model-select" v-model="selectedModel">
-            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-            <option value="gpt-4">GPT-4</option>
-            <option value="gpt-4o">GPT-4o</option>
-          </select>
-        </div>
-        <button class="btn btn-primary" @click="saveSettings">
-          保存设置
-        </button>
-      </div>
-    </div>
+<!--    <div class="settings-card">-->
+<!--      <h3>系统设置</h3>-->
+<!--      <div class="settings-form">-->
+<!--        <div class="form-group">-->
+<!--          <label for="api-url">API 地址</label>-->
+<!--          <input-->
+<!--            type="text"-->
+<!--            id="api-url"-->
+<!--            v-model="apiUrl"-->
+<!--            placeholder="请输入 API 地址"-->
+<!--          />-->
+<!--        </div>-->
+<!--        <div class="form-group">-->
+<!--          <label for="model-select">AI 模型</label>-->
+<!--          <select id="model-select" v-model="selectedModel">-->
+<!--            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>-->
+<!--            <option value="gpt-4">GPT-4</option>-->
+<!--            <option value="gpt-4o">GPT-4o</option>-->
+<!--          </select>-->
+<!--        </div>-->
+<!--        <button class="btn btn-primary" @click="saveSettings">-->
+<!--          保存设置-->
+<!--        </button>-->
+<!--      </div>-->
+<!--    </div>-->
   </div>
 </template>
 

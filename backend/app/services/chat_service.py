@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from backend.app.models.conversation import Conversation, Message
+from backend.app.models.model import Model
 from backend.app.core.rag_pipeline import RAGPipeline
 from backend.app.schemas.chat import ChatRequest, ChatResponse, Citation
 
@@ -55,12 +56,26 @@ async def chat(
     # 获取对话历史
     history = await _get_conversation_history(db, conversation.id)
 
+    # 如果提供了 model_id，从数据库获取模型详情
+    model_name = request.model
+    if request.model_id:
+        try:
+            model_result = await db.execute(
+                select(Model).where(Model.id == request.model_id, Model.is_active == True)
+            )
+            model = model_result.scalar_one_or_none()
+            if model:
+                model_name = model.model
+        except Exception as e:
+            logger.error(f"Failed to fetch model: {e}")
+
     # 调用 RAG Pipeline
     result = await rag_pipeline.run(
         query=request.query,
         kb_ids=request.kb_ids,
         conversation_history=history,
-        model=request.model,
+        model=model_name,
+        model_id=request.model_id,
         temperature=request.temperature,
         top_k=request.top_k,
     )
