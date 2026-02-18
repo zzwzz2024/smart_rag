@@ -43,7 +43,7 @@ class Menu(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # 关系保持不变...
+    # 关系
     permissions: Mapped[List["Permission"]] = relationship(
         "Permission",
         back_populates="menu",
@@ -51,15 +51,16 @@ class Menu(Base):
         lazy="selectin"
     )
     children: Mapped[List["Menu"]] = relationship(
-        "Permission",
-        back_populates="menu",
-        cascade="all, delete-orphan",
-        lazy="selectin"
+        "Menu",
+        back_populates="parent",
+        cascade="all",
+        lazy="selectin",
+        passive_deletes=True
     )
     parent: Mapped[Optional["Menu"]] = relationship(
-        "Permission",
-        back_populates="menu",
-        cascade="all, delete-orphan",
+        "Menu",
+        back_populates="children",
+        remote_side=[id],
         lazy="selectin"
     )
 

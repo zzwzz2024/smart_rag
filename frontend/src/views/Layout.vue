@@ -23,19 +23,19 @@
               <i class="submenu-arrow">{{ openSubmenu === 'knowledge' ? '▼' : '▶' }}</i>
             </div>
             <ul class="submenu">
-              <li>
+              <li :class="{ 'active': route.path === '/knowledge-base' }">
                 <router-link to="/knowledge-base" @click="handleMenuClick('/knowledge-base', 'knowledge-base', '知识库管理')">
                   <i class="icon">📚</i>
                   <span>知识库管理</span>
                 </router-link>
               </li>
-              <li>
+              <li :class="{ 'active': route.path === '/documents' }">
                 <router-link to="/documents" @click="handleMenuClick('/documents', 'documents', '文档管理')">
                   <i class="icon">📄</i>
                   <span>文档管理</span>
                 </router-link>
               </li>
-              <li>
+              <li :class="{ 'active': route.path === '/evaluation' }">
                 <router-link to="/evaluation" @click="handleMenuClick('/evaluation', 'evaluation', '知识库评估')">
                   <i class="icon">📊</i>
                   <span>知识库评估</span>
@@ -43,11 +43,32 @@
               </li>
             </ul>
           </li>
-          <li>
-            <router-link to="/model-settings" @click="handleMenuClick('/model-settings', 'model-settings', '模型设置')">
+          <li class="has-submenu" :class="{ 'open': openSubmenu === 'model' }">
+            <div class="submenu-title" @click="toggleSubmenu('model')">
               <i class="icon">🤖</i>
               <span>模型管理</span>
-            </router-link>
+              <i class="submenu-arrow">{{ openSubmenu === 'model' ? '▼' : '▶' }}</i>
+            </div>
+            <ul class="submenu">
+              <li :class="{ 'active': activeModelSubmenu === 'embedding' }">
+                <router-link to="/model-settings?type=embedding" @click="handleMenuClick('/model-settings?type=embedding', 'model-settings', 'Embedding模型')">
+                  <i class="icon">🤖</i>
+                  <span>Embedding模型</span>
+                </router-link>
+              </li>
+              <li :class="{ 'active': activeModelSubmenu === 'chat' }">
+                <router-link to="/model-settings?type=chat" @click="handleMenuClick('/model-settings?type=chat', 'model-settings', '聊天模型')">
+                  <i class="icon">🤖</i>
+                  <span>聊天模型</span>
+                </router-link>
+              </li>
+              <li :class="{ 'active': activeModelSubmenu === 'rerank' }">
+                <router-link to="/model-settings?type=rerank" @click="handleMenuClick('/model-settings?type=rerank', 'model-settings', 'Rerank模型')">
+                  <i class="icon">🤖</i>
+                  <span>Rerank模型</span>
+                </router-link>
+              </li>
+            </ul>
           </li>
           <li class="has-submenu" :class="{ 'open': openSubmenu === 'system' }">
             <div class="submenu-title" @click="toggleSubmenu('system')">
@@ -56,31 +77,31 @@
               <i class="submenu-arrow">{{ openSubmenu === 'system' ? '▼' : '▶' }}</i>
             </div>
             <ul class="submenu">
-              <li>
+              <li :class="{ 'active': route.path === '/system/users' }">
                 <router-link to="/system/users" @click="handleMenuClick('/system/users', 'system', '用户管理')">
                   <i class="icon">👤</i>
                   <span>用户管理</span>
                 </router-link>
               </li>
-              <li>
+              <li :class="{ 'active': route.path === '/system/roles' }">
                 <router-link to="/system/roles" @click="handleMenuClick('/system/roles', 'system', '角色管理')">
                   <i class="icon">🎭</i>
                   <span>角色管理</span>
                 </router-link>
               </li>
-              <li>
+              <li :class="{ 'active': route.path === '/system/menus' }">
                 <router-link to="/system/menus" @click="handleMenuClick('/system/menus', 'system', '菜单管理')">
                   <i class="icon">📋</i>
                   <span>菜单管理</span>
                 </router-link>
               </li>
-              <li>
+              <li :class="{ 'active': route.path === '/system/permissions' }">
                 <router-link to="/system/permissions" @click="handleMenuClick('/system/permissions', 'system', '权限设置')">
                   <i class="icon">🔒</i>
                   <span>权限设置</span>
                 </router-link>
               </li>
-              <li>
+              <li :class="{ 'active': route.path === '/system/dictionaries' }">
                 <router-link to="/system/dictionaries" @click="handleMenuClick('/system/dictionaries', 'system', '字典管理')">
                   <i class="icon">📖</i>
                   <span>字典管理</span>
@@ -209,15 +230,31 @@ const currentViewTitle = computed(() => {
   return viewMap[appStore.currentView] || 'ZZWZZ RAG 系统'
 })
 
+// 计算当前激活的模型子菜单
+const activeModelSubmenu = computed(() => {
+  if (route.path === '/model-settings') {
+    return route.query.type as string
+  }
+  return null
+})
+
 // 处理菜单点击
 const handleMenuClick = (path: string, view: string, title: string) => {
   // 点击其他菜单时，收起相应的子菜单
-  if (view !== 'system' && view !== 'knowledge-base' && view !== 'evaluation' && view !== 'documents') {
+  if (view !== 'system' && view !== 'knowledge-base' && view !== 'evaluation' && view !== 'documents' && view !== 'model-settings') {
     openSubmenu.value = null
   }
   // 点击知识库相关菜单时，保持知识库子菜单打开
   if (view === 'knowledge-base' || view === 'evaluation' || view === 'documents') {
     openSubmenu.value = 'knowledge'
+  }
+  // 点击模型相关菜单时，保持模型子菜单打开
+  if (view === 'model-settings') {
+    openSubmenu.value = 'model'
+  }
+  // 点击系统设置相关菜单时，保持系统设置子菜单打开
+  if (view === 'system') {
+    openSubmenu.value = 'system'
   }
   appStore.setCurrentView(view)
   tabsStore.addTab({
@@ -469,9 +506,15 @@ onUnmounted(() => {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
-.sidebar-nav a.router-link-active {
+.sidebar-nav > ul > li > a.router-link-active {
   background-color: #4CAF50;
   color: white;
+}
+
+/* 子菜单中只有真正激活的项才显示绿色背景 */
+.submenu li a.router-link-active {
+  background-color: inherit;
+  color: inherit;
 }
 
 .sidebar-nav .icon {
@@ -492,6 +535,11 @@ onUnmounted(() => {
 /* 子菜单样式 */
 .has-submenu {
   position: relative;
+  background-color: #2c3e50;
+}
+
+.has-submenu.open {
+  background-color: #2c3e50;
 }
 
 .submenu-title {
@@ -552,9 +600,15 @@ onUnmounted(() => {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
+.submenu li.active a {
+  background-color: #4CAF50 !important;
+  color: white !important;
+}
+
+/* 子菜单中只有真正激活的项才显示绿色背景 */
 .submenu li a.router-link-active {
-  background-color: #4CAF50;
-  color: white;
+  background-color: inherit;
+  color: inherit;
 }
 
 /* 折叠状态下的子菜单 */

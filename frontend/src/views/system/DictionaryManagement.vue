@@ -13,8 +13,8 @@
         <el-form-item label="字典名称">
           <el-input v-model="searchForm.name" placeholder="请输入字典名称" clearable />
         </el-form-item>
-        <el-form-item label="字典类型">
-          <el-input v-model="searchForm.type" placeholder="请输入字典类型" clearable />
+        <el-form-item label="字典英文名">
+          <el-input v-model="searchForm.type" placeholder="请输入字典英文名" clearable />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">
@@ -33,16 +33,25 @@
       <el-table :data="filteredDictionaries" style="width: 100%">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="字典名称" />
-        <el-table-column prop="type" label="字典类型" />
+        <el-table-column prop="type" label="字典英文名" />
         <el-table-column prop="description" label="字典描述" />
-        <el-table-column prop="items" label="字典项数量" width="120">
+        <el-table-column prop="items" label="字典项数量" width="120" align="center">
           <template #default="scope">
-            {{ scope.row.items.length }}
+            <div 
+              v-if="scope.row.items && scope.row.items.length > 0"
+              style="cursor: pointer; color: #409EFF;"
+              @click="openItemsDialog(scope.row)"
+            >
+              {{ scope.row.items.length }}
+            </div>
+            <div v-else>
+              数据为空
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="createTime" label="创建时间" width="180" />
         <el-table-column prop="updateTime" label="更新时间" width="180" />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="scope">
             <el-button type="primary" size="small" @click="openEditDialog(scope.row)">
               <el-icon><Edit /></el-icon>
@@ -52,10 +61,10 @@
               <el-icon><Delete /></el-icon>
               删除
             </el-button>
-            <el-button type="info" size="small" @click="openItemsDialog(scope.row)">
-              <el-icon><List /></el-icon>
-              字典项
-            </el-button>
+<!--            <el-button type="info" size="small" @click="openItemsDialog(scope.row)">-->
+<!--              <el-icon><List /></el-icon>-->
+<!--              字典项-->
+<!--            </el-button>-->
           </template>
         </el-table-column>
       </el-table>
@@ -83,8 +92,8 @@
         <el-form-item label="字典名称" prop="name">
           <el-input v-model="dictionaryForm.name" placeholder="请输入字典名称" />
         </el-form-item>
-        <el-form-item label="字典类型" prop="type">
-          <el-input v-model="dictionaryForm.type" placeholder="请输入字典类型" />
+        <el-form-item label="字典英文名" prop="type">
+          <el-input v-model="dictionaryForm.type" placeholder="请输入字典英文名" />
         </el-form-item>
         <el-form-item label="字典描述" prop="description">
           <el-input v-model="dictionaryForm.description" placeholder="请输入字典描述" type="textarea" />
@@ -117,7 +126,7 @@
         <el-table-column prop="value" label="字典值" />
         <el-table-column prop="label" label="显示文本" />
         <el-table-column prop="sort" label="排序" width="80" />
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="scope">
             <el-button type="primary" size="small" @click="openEditItemDialog(scope.row)">
               <el-icon><Edit /></el-icon>
@@ -227,8 +236,8 @@ const dictionaryRules = ref<FormRules>({
     { min: 1, max: 50, message: '字典名称长度在 1 到 50 个字符', trigger: 'blur' }
   ],
   type: [
-    { required: true, message: '请输入字典类型', trigger: 'blur' },
-    { min: 1, max: 50, message: '字典类型长度在 1 到 50 个字符', trigger: 'blur' }
+    { required: true, message: '请输入字典英文名', trigger: 'blur' },
+    { min: 1, max: 50, message: '字典英文名长度在 1 到 50 个字符', trigger: 'blur' }
   ]
 })
 
@@ -280,11 +289,25 @@ const activeSubMenu = computed(() => {
 const loadDictionaries = async () => {
   loading.value = true
   try {
-    const response = await dictionaryApi.getDictionaries({
+    const dictionariesList = await dictionaryApi.getDictionaries({
       skip: (pagination.value.currentPage - 1) * pagination.value.pageSize,
       limit: pagination.value.pageSize
     })
-    dictionaries.value = response
+    
+    // 为每个字典加载字典项
+    const dictionariesWithItems = await Promise.all(
+      dictionariesList.map(async (dictionary) => {
+        try {
+          const fullDictionary = await dictionaryApi.getDictionaryById(dictionary.id)
+          return fullDictionary
+        } catch (error) {
+          console.error(`加载字典 ${dictionary.id} 的字典项失败:`, error)
+          return dictionary
+        }
+      })
+    )
+    
+    dictionaries.value = dictionariesWithItems
   } catch (error) {
     console.error('加载字典列表失败:', error)
     ElMessage.error('加载字典列表失败')

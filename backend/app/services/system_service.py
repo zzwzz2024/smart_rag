@@ -157,28 +157,45 @@ class SystemService:
         return True
 
     @staticmethod
-    async def get_menu_tree(db: AsyncSession) -> List[Menu]:
+    async def get_menu_tree(db: AsyncSession) -> List[dict]:
         """获取菜单树结构（修复重复问题）"""
+        # 1. 先获取所有菜单
         result = await db.execute(
             select(Menu)
-            .options(joinedload(Menu.children))  # 预加载子菜单
             .order_by(Menu.sort)
         )
-        all_menus = result.scalars().unique().all()  # ✅ 关键：添加 .unique()
-
-        menu_dict = {menu.id: menu for menu in all_menus}
+        all_menus = result.scalars().all()
+        
+        # 2. 将菜单转换为字典格式，方便构建树
+        menu_dict = {}
         root_menus = []
-
+        
         for menu in all_menus:
+            menu_data = {
+                "id": menu.id,
+                "name": menu.name,
+                "code": menu.code,
+                "path": menu.path,
+                "icon": menu.icon,
+                "parent_id": menu.parent_id,
+                "sort": menu.sort,
+                "is_active": menu.is_active,
+                "created_at": menu.created_at,
+                "updated_at": menu.updated_at,
+                "children": []
+            }
+            menu_dict[menu.id] = menu_data
+            
             if menu.parent_id is None:
-                root_menus.append(menu)
-            else:
-                parent = menu_dict.get(menu.parent_id)
+                root_menus.append(menu_data)
+        
+        # 3. 构建菜单树
+        for menu_id, menu_data in menu_dict.items():
+            if menu_data["parent_id"]:
+                parent = menu_dict.get(menu_data["parent_id"])
                 if parent:
-                    if not hasattr(parent, 'children') or parent.children is None:
-                        parent.children = []
-                    parent.children.append(menu)
-
+                    parent["children"].append(menu_data)
+        
         return root_menus
 
     # 3. 权限相关服务

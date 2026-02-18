@@ -1,155 +1,53 @@
 <template>
   <div class="model-settings-container">
-    <h2>模型管理</h2>
+    <h2>{{ getPageTitle() }}</h2>
     
-    <!-- 模型类型切换 -->
-    <div class="model-type-tabs">
-      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-        <el-tab-pane label="Embedding 模型" name="embedding">
-          <div class="model-actions">
-            <el-button type="primary" @click="showAddModelDialog('embedding')">
-              <el-icon><Plus /></el-icon>
-              添加 Embedding 模型
-            </el-button>
-          </div>
-          <el-table :data="filteredModels" style="width: 100%" border>
-            <el-table-column prop="name" label="模型标识" width="180" />
-            <el-table-column prop="model" label="模型名称" />
-            <el-table-column prop="vendorName" label="模型厂商" width="150" />
-            <el-table-column prop="apiKey" label="API Key" width="150">
-              <template #default="scope">
-                {{ scope.row.apiKey ? '已设置' : '未设置' }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="baseUrl" label="基础 URL" width="200" />
-            <el-table-column label="状态" width="120">
-              <template #default="scope">
-                <el-switch
-                  v-model="scope.row.isActive"
-                  active-text=""
-                  inactive-text=""
-                  @change="handleStatusChange(scope.row)"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="220" fixed="right">
-              <template #default="scope">
-                <el-button size="small" @click="showEditModelDialog(scope.row)">
-                  编辑
-                </el-button>
-                <el-button 
-                  size="small" 
-                  type="primary" 
-                  :disabled="scope.row.isDefault"
-                  @click="setDefaultModel(scope.row.id)"
-                >
-                  {{ scope.row.isDefault ? '默认模型' : '设为默认' }}
-                </el-button>
-                <el-button size="small" type="danger" @click="confirmDeleteModel(scope.row.id)">
-                  删除
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        
-        <el-tab-pane label="聊天模型" name="chat">
-          <div class="model-actions">
-            <el-button type="primary" @click="showAddModelDialog('chat')">
-              <el-icon><Plus /></el-icon>
-              添加聊天模型
-            </el-button>
-          </div>
-          <el-table :data="filteredModels" style="width: 100%" border>
-            <el-table-column prop="name" label="模型名称" width="180" />
-            <el-table-column prop="model" label="模型标识" />
-            <el-table-column prop="vendorName" label="模型厂商" width="150" />
-            <el-table-column prop="apiKey" label="API Key" width="160">
-              <template #default="scope">
-                {{ scope.row.apiKey ? '已设置' : '未设置' }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="baseUrl" label="基础 URL" width="200" />
-            <el-table-column label="状态" width="120">
-              <template #default="scope">
-                <el-switch
-                  v-model="scope.row.isActive"
-                  active-text=""
-                  inactive-text=""
-                  @change="handleStatusChange(scope.row)"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="240" fixed="right">
-              <template #default="scope">
-                <el-button size="small" @click="showEditModelDialog(scope.row)">
-                  编辑
-                </el-button>
-                <el-button 
-                  size="small" 
-                  type="primary" 
-                  :disabled="scope.row.isDefault"
-                  @click="setDefaultModel(scope.row.id)"
-                >
-                  {{ scope.row.isDefault ? '默认模型' : '设为默认' }}
-                </el-button>
-                <el-button size="small" type="danger" @click="confirmDeleteModel(scope.row.id)">
-                  删除
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        
-        <el-tab-pane label="Rerank 模型" name="rerank">
-          <div class="model-actions">
-            <el-button type="primary" @click="showAddModelDialog('rerank')">
-              <el-icon><Plus /></el-icon>
-              添加 Rerank 模型
-            </el-button>
-          </div>
-          <el-table :data="filteredModels" style="width: 100%" border>
-            <el-table-column prop="name" label="模型名称" width="180" />
-            <el-table-column prop="model" label="模型标识" />
-            <el-table-column prop="vendorName" label="模型厂商" width="150" />
-            <el-table-column prop="apiKey" label="API Key" width="200">
-              <template #default="scope">
-                {{ scope.row.apiKey ? '已设置' : '未设置' }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="baseUrl" label="基础 URL" width="200" />
-            <el-table-column label="状态" width="120">
-              <template #default="scope">
-                <el-switch
-                  v-model="scope.row.isActive"
-                  active-text="启用"
-                  inactive-text="停用"
-                  @change="handleStatusChange(scope.row)"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="200" fixed="right">
-              <template #default="scope">
-                <el-button size="small" @click="showEditModelDialog(scope.row)">
-                  编辑
-                </el-button>
-                <el-button 
-                  size="small" 
-                  type="primary" 
-                  :disabled="scope.row.isDefault"
-                  @click="setDefaultModel(scope.row.id)"
-                >
-                  {{ scope.row.isDefault ? '默认模型' : '设为默认' }}
-                </el-button>
-                <el-button size="small" type="danger" @click="confirmDeleteModel(scope.row.id)">
-                  删除
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
+    <!-- 模型管理界面 -->
+    <div class="model-actions">
+      <el-button type="primary" @click="showAddModelDialog(currentModelType)">
+        <el-icon><Plus /></el-icon>
+        {{ getAddButtonText() }}
+      </el-button>
     </div>
+    <el-table :data="filteredModels" style="width: 100%" border>
+      <el-table-column prop="name" :label="currentModelType === 'embedding' ? '模型标识' : '模型名称'" width="180" />
+      <el-table-column prop="model" :label="currentModelType === 'embedding' ? '模型名称' : '模型标识'" />
+      <el-table-column prop="vendorName" label="模型厂商" width="150" />
+      <el-table-column prop="apiKey" label="API Key" width="150">
+        <template #default="scope">
+          {{ scope.row.apiKey ? '已设置' : '未设置' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="baseUrl" label="基础 URL" width="200" />
+      <el-table-column label="状态" width="120">
+        <template #default="scope">
+          <el-switch
+            v-model="scope.row.isActive"
+            active-text=""
+            inactive-text=""
+            @change="handleStatusChange(scope.row)"
+          />
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="220" fixed="right">
+        <template #default="scope">
+          <el-button size="small" @click="showEditModelDialog(scope.row)">
+            编辑
+          </el-button>
+          <el-button 
+            size="small" 
+            type="primary" 
+            :disabled="scope.row.isDefault"
+            @click="setDefaultModel(scope.row.id)"
+          >
+            {{ scope.row.isDefault ? '默认模型' : '设为默认' }}
+          </el-button>
+          <el-button size="small" type="danger" @click="confirmDeleteModel(scope.row.id)">
+            删除
+          </el-button>
+        </template>
+      </el-table-column>
+    </el-table>
     
     <!-- 添加/编辑模型对话框 -->
     <el-dialog
@@ -201,9 +99,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import { useRoute } from 'vue-router'
 import modelApi, { ModelCreate, ModelUpdate, ModelResponse } from '../api/model'
 
 // 模型厂商类型定义
@@ -230,8 +129,11 @@ const ModelType = {
   RERANK: 'rerank' as const
 }
 
+// 路由
+const route = useRoute()
+
 // 响应式数据
-const activeTab = ref<'embedding' | 'chat' | 'rerank'>('embedding')
+const currentModelType = ref<'embedding' | 'chat' | 'rerank'>('embedding')
 const dialogVisible = ref(false)
 const dialogTitle = ref('')
 const modelForm = ref<Partial<Model>>({
@@ -261,14 +163,27 @@ const modelRules = {
 
 // 过滤当前类型的模型
 const filteredModels = computed(() => {
-  return models.value.filter(model => model.type === activeTab.value)
+  return models.value.filter(model => model.type === currentModelType.value)
 })
 
-// 处理标签页切换
-const handleTabChange = (tab: string) => {
-  activeTab.value = tab as 'embedding' | 'chat' | 'rerank'
-  modelForm.value.type = activeTab.value
-  loadModels()
+// 获取页面标题
+const getPageTitle = () => {
+  const typeMap = {
+    embedding: 'Embedding 模型管理',
+    chat: '聊天模型管理',
+    rerank: 'Rerank 模型管理'
+  }
+  return typeMap[currentModelType.value]
+}
+
+// 获取添加按钮文本
+const getAddButtonText = () => {
+  const typeMap = {
+    embedding: '添加 Embedding 模型',
+    chat: '添加聊天模型',
+    rerank: '添加 Rerank 模型'
+  }
+  return typeMap[currentModelType.value]
 }
 
 // 显示添加模型对话框
@@ -427,7 +342,7 @@ const loadVendors = async () => {
 const loadModels = async () => {
   try {
     const response = await modelApi.getModels({
-      type: activeTab.value,
+      type: currentModelType.value,
       page: 1,
       page_size: 100 // 加载足够多的模型
     })
@@ -466,8 +381,24 @@ const setDefaultModel = async (modelId: string) => {
   }
 }
 
+// 监听路由参数变化
+watch(
+  () => route.query.type,
+  async (newType) => {
+    if (newType && ['embedding', 'chat', 'rerank'].includes(newType as string)) {
+      currentModelType.value = newType as 'embedding' | 'chat' | 'rerank'
+      await loadModels()
+    }
+  }
+)
+
 // 初始化
 onMounted(async () => {
+  // 从URL查询参数中获取模型类型
+  const typeParam = route.query.type as string
+  if (typeParam && ['embedding', 'chat', 'rerank'].includes(typeParam)) {
+    currentModelType.value = typeParam as 'embedding' | 'chat' | 'rerank'
+  }
   await loadVendors()
   await loadModels()
 })
