@@ -14,6 +14,10 @@ export const kbApi = {
   createKnowledgeBase(data: {
     name: string
     description: string
+    embedding_model_id?: string
+    rerank_model_id?: string
+    chunk_size?: number
+    chunk_overlap?: number
   }) {
     return request<KnowledgeBase>({
       url: '/kb/knowledge-base',
@@ -23,7 +27,7 @@ export const kbApi = {
   },
 
   // 获取知识库详情
-  getKnowledgeBase(kbId: number) {
+  getKnowledgeBase(kbId: string) {
     return request<KnowledgeBase>({
       url: `/kb/knowledge-base/${kbId}`,
       method: 'get'
@@ -31,9 +35,13 @@ export const kbApi = {
   },
 
   // 更新知识库
-  updateKnowledgeBase(kbId: number, data: {
+  updateKnowledgeBase(kbId: string, data: {
     name?: string
     description?: string
+    embedding_model_id?: string
+    rerank_model_id?: string
+    chunk_size?: number
+    chunk_overlap?: number
   }) {
     return request<KnowledgeBase>({
       url: `/kb/knowledge-base/${kbId}`,
@@ -43,7 +51,7 @@ export const kbApi = {
   },
 
   // 删除知识库
-  deleteKnowledgeBase(kbId: number) {
+  deleteKnowledgeBase(kbId: string) {
     return request({
       url: `/kb/knowledge-base/${kbId}`,
       method: 'delete'

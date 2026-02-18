@@ -22,7 +22,7 @@ settings = get_settings()
 vector_store = VectorStore()
 
 
-@router.post("/upload/{kb_id}", response_model=DocumentResponse)
+@router.post("/upload/{kb_id}", response_model=dict)
 async def upload_document(
     kb_id: str,
     background_tasks: BackgroundTasks,
@@ -56,35 +56,46 @@ async def upload_document(
     with open(file_path, "wb") as f:
         f.write(content)
 
-    # 创建文档记录
-    doc = Document(
-        id=file_id,
-        kb_id=kb_id,
-        filename=file.filename,
-        file_path=file_path,
-        file_type=ext.lstrip("."),
-        file_size=len(content),
-        status="pending",
-    )
-    db.add(doc)
-    await db.flush()
-    await db.commit()
+    # 后台异步处理文档，处理成功后才创建文档记录
+    background_tasks.add_task(_process_doc_background, file_id, kb_id, file.filename, file_path, ext.lstrip("."), len(content))
 
-    # 后台异步处理文档
-    background_tasks.add_task(_process_doc_background, file_id)
-
-    return DocumentResponse.model_validate(doc)
+    return {
+        "message": "文档上传成功，正在处理中",
+        "file_id": file_id,
+        "filename": file.filename
+    }
 
 
-async def _process_doc_background(doc_id: str):
+async def _process_doc_background(doc_id: str, kb_id: str, filename: str, file_path: str, file_type: str, file_size: int):
     print(f"Starting background processing for document {doc_id}")
     try:
         async with async_session_factory() as db:
+            # 1. 创建文档记录（状态为processing）
+            from backend.app.models.document import Document
+            doc = Document(
+                id=doc_id,
+                kb_id=kb_id,
+                filename=filename,
+                file_path=file_path,
+                file_type=file_type,
+                file_size=file_size,
+                status="processing",
+            )
+            db.add(doc)
+            
+            # 2. 处理文档（包括分块、向量化等）
             await process_document(db, doc_id)
+            
+            # 3. 提交事务，只有处理成功才会保存到数据库
             await db.commit()
             print(f"Document {doc_id} processed successfully")
     except Exception as e:
         print(f"Error processing document {doc_id}: {e}")
+        # 如果处理失败，文档记录不会被保存到数据库
+        # 清理上传的文件
+        import os
+        if os.path.exists(file_path):
+            os.remove(file_path)
         raise
 
 @router.get("/list/{kb_id}", response_model=dict)

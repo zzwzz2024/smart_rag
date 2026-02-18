@@ -18,7 +18,9 @@ from backend.app.core.vector_store import VectorStore
 settings = get_settings()
 parser = DocumentParser()
 chunker = SmartChunker()
-vector_store = VectorStore()
+
+# 延迟初始化VectorStore，在process_document中根据知识库配置创建
+vector_store_instances = {}
 
 
 async def process_document(
@@ -42,7 +44,7 @@ async def process_document(
     try:
         # 更新状态
         doc.status = "processing"
-        await db.commit()
+        # 不要在这里提交事务，让调用者处理事务提交
 
         logger.info(f"Processing document: {doc.filename}")
 
@@ -80,7 +82,37 @@ async def process_document(
         db.add_all(db_chunks)
 
         # Step 4: 向量化 & 存入向量库
-        vector_store.add_chunks(
+        # 获取知识库配置
+        kb_result = await db.execute(
+            select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id)
+        )
+        kb = kb_result.scalar_one_or_none()
+        
+        if not kb:
+            raise ValueError(f"知识库不存在: {doc.kb_id}")
+        
+        # 获取模型配置
+        embedding_model_id = kb.embedding_model_id
+        embedding_model = None
+        if embedding_model_id:
+            from backend.app.models.model import Model
+            model_result = await db.execute(
+                select(Model).where(Model.id == embedding_model_id)
+            )
+            embedding_model = model_result.scalar_one_or_none()
+        
+        # 创建或获取VectorStore实例
+        vector_store_key = f"{doc.kb_id}_{embedding_model_id or 'default'}"
+        if vector_store_key not in vector_store_instances:
+            api_key = embedding_model.api_key if embedding_model else None
+            base_url = embedding_model.base_url if embedding_model else None
+            model_name = embedding_model.model if embedding_model else kb.embedding_model
+            vector_store_instances[vector_store_key] = VectorStore(api_key, base_url, model_name)
+        
+        current_vector_store = vector_store_instances[vector_store_key]
+        
+        # 向量化并存储
+        current_vector_store.add_chunks(
             kb_id=doc.kb_id,
             chunk_ids=chunk_ids,
             contents=chunk_contents,
@@ -112,7 +144,6 @@ async def process_document(
 
     except Exception as e:
         logger.error(f"Document processing failed: {e}")
-        doc.status = "failed"
-        doc.error_msg = str(e)
-        await db.commit()
+        # 不要在这里提交事务，让调用者处理事务回滚
+        # 文档记录和分块记录会被自动回滚
         raise

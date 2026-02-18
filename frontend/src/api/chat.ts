@@ -59,11 +59,18 @@ export const chatApi = {
   },
 
   // 初始化模型
-  initializeModel(modelId: string) {
+  initializeModel(modelId: string, options?: {
+    kb_id?: string
+    embedding_model_id?: string
+    rerank_model_id?: string
+  }) {
     return request({
       url: `/chat/initialize-model`,
       method: 'post',
-      data: { model_id: modelId }
+      data: {
+        model_id: modelId,
+        ...options
+      }
     })
   }
 }

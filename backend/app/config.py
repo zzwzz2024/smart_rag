@@ -25,11 +25,6 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = 100
 
     # ---- LLM ----
-    OPENAI_PROVIDER: str = "openai"
-    OPENAI_API_KEY: str = ""
-    OPENAI_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    LLM_MODEL: str = "qwen3-max"
-    EMBEDDING_MODEL: str = "text-embedding-v1"
     EMBEDDING_DIMENSION: int = 1536
     LLM_TEMPERATURE: float = 0.1
     LLM_MAX_TOKENS: int = 4096

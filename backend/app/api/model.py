@@ -153,12 +153,20 @@ async def test_model_api(
             }
 
         elif model_type == "rerank":
-            url = f"{base_url}/rerank"
+            url = f"{base_url}/services/rerank/text-rerank/text-rerank"
             payload = {
                 "model": model_name,
-                "query": "test query",
-                "documents": ["document one", "document two"],
-                "top_n": 1,
+                "input": {
+                    "query": "什么是文本排序模型",
+                    "documents": [
+                        "文本排序模型广泛用于搜索引擎和推荐系统中",
+                        "量子计算是计算科学的一个前沿领域"
+                    ]
+                },
+                "parameters": {
+                    "return_documents": True,
+                    "top_n": 5
+                }
             }
 
     # ========== 3. 发送测试请求 ==========
@@ -334,7 +342,7 @@ def _validate_response_body(model_type: str, resp: dict, is_anthropic: bool):
 
     elif model_type == "rerank":
         # 应包含 results
-        if "results" not in resp:
+        if not resp.get("output"):
             raise HTTPException(
                 status_code=400,
                 detail="响应格式异常：返回 200 但不含 'results'，请检查 Rerank 接口地址"

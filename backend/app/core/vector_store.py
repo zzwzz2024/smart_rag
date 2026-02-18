@@ -34,16 +34,16 @@ class VectorStore:
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self,api_key=None,base_url=None,model_name=None):
+    def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None):
         if self._initialized:
             return
         self._initialized = False
-        logger.info(f"VectorStore初始化url:{base_url}")
+        logger.info(f"VectorStore初始化url:{base_url}, model:{model_name}, embedding_model:{embedding_model}")
         self.client = chromadb.PersistentClient(
             path=settings.CHROMA_PERSIST_DIR,
             settings=ChromaSettings(anonymized_telemetry=False),
         )
-        self.embedder = EmbeddingService(api_key,base_url)
+        self.embedder = EmbeddingService(embedding_model=embedding_model)
         logger.info("VectorStore initialized (ChromaDB)")
 
     def _get_collection(self, kb_id: str):

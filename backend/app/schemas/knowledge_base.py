@@ -8,6 +8,9 @@ class KBCreate(BaseModel):
     description: Optional[str] = None
     avatar: Optional[str] = "📚"
     embedding_model: Optional[str] = "text-embedding-3-small"
+    embedding_model_id: Optional[str] = None
+    rerank_model: Optional[str] = ""
+    rerank_model_id: Optional[str] = None
     chunk_size: Optional[int] = 512
     chunk_overlap: Optional[int] = 64
     retrieval_mode: Optional[str] = "hybrid"
@@ -17,6 +20,12 @@ class KBUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     avatar: Optional[str] = None
+    embedding_model: Optional[str] = None
+    embedding_model_id: Optional[str] = None
+    rerank_model: Optional[str] = None
+    rerank_model_id: Optional[str] = None
+    chunk_size: Optional[int] = None
+    chunk_overlap: Optional[int] = None
     retrieval_mode: Optional[str] = None
 
 
@@ -26,6 +35,9 @@ class KBResponse(BaseModel):
     description: Optional[str]
     avatar: str
     embedding_model: str
+    embedding_model_id: Optional[str]
+    rerank_model: Optional[str]
+    rerank_model_id: Optional[str]
     chunk_size: int
     chunk_overlap: int
     retrieval_mode: str

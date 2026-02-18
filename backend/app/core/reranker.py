@@ -14,12 +14,20 @@ settings = get_settings()
 class Reranker:
     """重排序器"""
 
-    def __init__(self,api_key=None,base_url=None,model_name=None):
-        self.client = OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout = 120.0
-        )
+    def __init__(self,api_key=None,base_url=None,model_name=None, rerank_model=None):
+        # 如果提供了rerank_model，使用它的配置
+        if rerank_model:
+            self.client = OpenAI(
+                api_key=rerank_model.api_key,
+                base_url=rerank_model.base_url,
+                timeout = 120.0
+            )
+        else:
+            self.client = OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout = 120.0
+            )
 
     async def rerank(
         self,

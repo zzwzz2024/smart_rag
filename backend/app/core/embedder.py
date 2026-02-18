@@ -21,7 +21,7 @@ class EmbeddingService:
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self,api_key=None,base_url=None,model_name=None):
+    def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None):
         if self._initialized:
             return
         self._initialized = False
@@ -29,7 +29,11 @@ class EmbeddingService:
         if settings.USE_LOCAL_EMBEDDING:
             self._init_local_model()
         else:
-            self._init_openai_client(api_key,base_url,model_name)
+            # 如果提供了embedding_model，使用它的配置
+            if embedding_model:
+                self._init_openai_client(embedding_model.api_key, embedding_model.base_url, embedding_model.model)
+            else:
+                self._init_openai_client(api_key,base_url,model_name)
 
     def _init_openai_client(self,api_key=None,base_url=None,model_name=None):
         """初始化 OpenAI Embedding 客户端"""
@@ -40,7 +44,7 @@ class EmbeddingService:
             base_url=base_url,
             timeout = 120.0
         )
-        self.model = settings.EMBEDDING_MODEL
+        self.model = model_name
         self.is_local = False
         logger.info(f"Embedding service initialized (OpenAI: {self.model})")
 

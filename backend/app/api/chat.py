@@ -18,8 +18,7 @@ from backend.app.schemas.chat import (
     MessageResponse, FeedbackRequest,
 )
 from backend.app.utils.auth import get_current_user
-from backend.app.services.chat_service import chat as chat_service
-from backend.app.services.chat_service import rag_pipeline
+import backend.app.services.chat_service as chat_service
 
 router = APIRouter()
 
@@ -37,7 +36,7 @@ async def chat(
     if not request.model_id:
         raise HTTPException(400, "请选择一个模型，如果没有可用模型，请前往模型设置页面配置")
 
-    response = await chat_service(db, request, user.id)
+    response = await chat_service.chat(db, request, user.id)
     return response
 
 
@@ -196,6 +195,35 @@ async def initialize_model(
     if not model:
         raise HTTPException(404, "模型不存在或未激活")
 
-    chat_service.rag_pipeline = RAGPipeline(api_key=model.api_key,base_url=model.base_url)
+    # 获取知识库和模型参数
+    kb_id = model_data.get("kb_id")
+    embedding_model_id = model_data.get("embedding_model_id")
+    rerank_model_id = model_data.get("rerank_model_id")
+
+    # 初始化模型变量
+    embedding_model = None
+    rerank_model = None
+
+    # 如果提供了embedding_model_id，从数据库获取embedding模型详情
+    if embedding_model_id:
+        embedding_result = await db.execute(
+            select(Model).where(Model.id == embedding_model_id, Model.is_active == True)
+        )
+        embedding_model = embedding_result.scalar_one_or_none()
+
+    # 如果提供了rerank_model_id，从数据库获取rerank模型详情
+    if rerank_model_id:
+        rerank_result = await db.execute(
+            select(Model).where(Model.id == rerank_model_id, Model.is_active == True)
+        )
+        rerank_model = rerank_result.scalar_one_or_none()
+
+    # 初始化RAG pipeline，传递模型详情
+    chat_service.rag_pipeline = RAGPipeline(
+        api_key=model.api_key,
+        base_url=model.base_url,
+        embedding_model=embedding_model,
+        rerank_model=rerank_model
+    )
 
     return {"message": f"模型 {model.name} 配置验证成功", "model_id": model_id, "model": model.model}

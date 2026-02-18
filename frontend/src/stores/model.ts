@@ -21,12 +21,27 @@ export const useModelStore = defineStore('model', {
         const models = response.items || []
         
         // Filter models by type
-        this.chatModels = models.filter(model => model.type === 'chat' && model.isActive)
-        this.embeddingModels = models.filter(model => model.type === 'embedding' && model.isActive)
-        this.rerankModels = models.filter(model => model.type === 'rerank' && model.isActive)
-        
-        // Store all models
-        this.models = models
+        if (!type) {
+          // If no type specified, update all model arrays
+          this.chatModels = models.filter(model => model.type === 'chat' && (model.isActive ?? true))
+          this.embeddingModels = models.filter(model => model.type === 'embedding' && (model.isActive ?? true))
+          this.rerankModels = models.filter(model => model.type === 'rerank' && (model.isActive ?? true))
+          // Store all models
+          this.models = models
+        } else {
+          // If type specified, update only the relevant model array
+          switch (type) {
+            case 'chat':
+              this.chatModels = models.filter(model => model.type === 'chat' && (model.isActive ?? true))
+              break
+            case 'embedding':
+              this.embeddingModels = models.filter(model => model.type === 'embedding' && (model.isActive ?? true))
+              break
+            case 'rerank':
+              this.rerankModels = models.filter(model => model.type === 'rerank' && (model.isActive ?? true))
+              break
+          }
+        }
         
         return models
       } catch (error: any) {

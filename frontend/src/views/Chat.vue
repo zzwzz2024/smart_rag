@@ -100,7 +100,7 @@
         </div>
 
         <!-- 聊天消息列表 -->
-        <div class="chat-messages">
+        <div class="chat-messages" ref="chatMessagesRef">
           <div
             v-for="message in chatStore.messages"
             :key="message.id"
@@ -186,6 +186,9 @@ const editingConversationId = ref<string | null>(null)
 const editTitle = ref('')
 const titleInputRef = ref<HTMLInputElement | null>(null)
 
+// 聊天消息容器引用
+const chatMessagesRef = ref<HTMLElement | null>(null)
+
 // 获取对话标题
 const getConversationTitle = (conversation: Conversation): string => {
   return conversation.title || '新对话'
@@ -209,6 +212,8 @@ const selectConversation = async (conversation: Conversation) => {
     await chatStore.getConversation(conversation.id)
     // 设置当前对话
     chatStore.setCurrentConversation(conversation)
+    // 滚动到聊天消息底部
+    scrollToBottom()
   } catch (error) {
     console.error('加载对话历史失败:', error)
   }
@@ -279,6 +284,8 @@ const sendMessage = async () => {
       ElMessage.error('请先选择一个模型，如果没有可用模型，请前往模型设置页面配置')
     } else {
       await chatStore.sendMessage(message, kbId, modelId)
+      // 滚动到聊天消息底部
+      scrollToBottom()
     }
   } catch (error: any) {
     // 提取详细错误信息
@@ -295,6 +302,15 @@ const startNewConversation = () => {
   selectedModel.value = ''
 }
 
+// 滚动到聊天消息底部
+const scrollToBottom = () => {
+  setTimeout(() => {
+    if (chatMessagesRef.value) {
+      chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight
+    }
+  }, 100)
+}
+
 // 切换暗色模式
 const toggleDarkMode = () => {
   const body = document.body
@@ -302,6 +318,41 @@ const toggleDarkMode = () => {
   // 这里可以添加保存暗色模式设置的逻辑
   localStorage.setItem('darkMode', body.classList.contains('dark-mode') ? 'true' : 'false')
 }
+
+// 监听知识库选择变化
+watch(selectedKnowledgeBase, async (newKbId) => {
+  if (newKbId) {
+    try {
+      // 获取知识库详情
+      const kb = kbStore.knowledgeBases.find(k => k.id === newKbId)
+      if (kb) {
+        console.log('Selected knowledge base:', kb.name)
+        console.log('Embedding model ID:', kb.embedding_model_id)
+        console.log('Rerank model ID:', kb.rerank_model_id)
+        
+        // 根据知识库关联的模型初始化参数
+        // 示例：如果有默认的聊天模型，可以选择第一个可用的模型
+        if (modelStore.chatModels.length > 0 && !selectedModel.value) {
+          selectedModel.value = modelStore.chatModels[0].id
+        }
+        
+        // 调用后端API初始化模型，传递知识库关联的模型信息
+        if (selectedModel.value) {
+          console.log('初始化模型:', selectedModel.value)
+          // 调用后端API来初始化模型，传递知识库信息
+          await chatApi.initializeModel(selectedModel.value, {
+            kb_id: newKbId,
+            embedding_model_id: kb.embedding_model_id,
+            rerank_model_id: kb.rerank_model_id
+          })
+          console.log('模型初始化成功')
+        }
+      }
+    } catch (error) {
+      console.error('获取知识库详情失败:', error)
+    }
+  }
+})
 
 // 监听模型选择变化
 watch(selectedModel, async (newModelId) => {
@@ -319,6 +370,11 @@ watch(selectedModel, async (newModelId) => {
       console.error('初始化模型失败:', error)
     }
   }
+})
+
+// 监听消息列表变化，自动滚动到最底部
+watch(() => chatStore.messages.length, () => {
+  scrollToBottom()
 })
 
 // 加载对话历史和知识库列表

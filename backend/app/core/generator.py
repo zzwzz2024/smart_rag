@@ -36,7 +36,7 @@ class Generator:
         )
         print(f"Generator函数初始化完成")
 
-    def _get_or_create_client(self, model_id: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None) -> OpenAI:
+    def _get_or_create_client(self, model_id: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None, base_url: Optional[str] = None) -> OpenAI:
         """
         获取或创建对应模型的客户端
         """
@@ -44,18 +44,52 @@ class Generator:
         client_key = model_id or model or "default"
         
         if client_key not in self.clients:
-            # 使用传递的api_key或默认api_key
-            current_api_key = api_key or settings.OPENAI_API_KEY
+            # 只使用传递的api_key，不再使用默认api_key
+            if not api_key:
+                raise ValueError("API key is required for model client creation")
+            # 只使用传递的base_url
+            if not base_url:
+                raise ValueError("Base URL is required for model client creation")
             # 这里可以根据model_id从数据库获取模型配置
             # 例如，获取模型的base_url等
             self.clients[client_key] = OpenAI(
-                api_key=current_api_key,
-                base_url=settings.OPENAI_BASE_URL,
+                api_key=api_key,
+                base_url=base_url,
             )
             logger.info(f"Created new client for model: {client_key}")
         
         logger.info(f"Using client for model: {client_key}")
         return self.clients[client_key]
+
+    def _build_messages(
+            self,
+            query: str,
+            context: str,
+            conversation_history: List[dict]
+    ) -> List[dict]:
+        """构建消息历史"""
+        system_prompt = """你是一个严谨的智能问答助手，请严格遵循：
+    - 仅基于用户提供的【参考信息】回答问题；
+    - 若参考信息中无相关内容，必须回复：“根据提供的信息，未检索到相关内容”；
+    - 禁止编造、推测或使用外部知识；
+    - 引用时请注明“参考信息 X”；
+    - 回答需简洁、准确、有条理。"""
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # 添加历史对话（限制长度）
+        if conversation_history:
+            messages.extend(conversation_history[-4:])
+
+        # 将 context 和 query 合并到 user 消息中
+        user_content = (
+            f"【参考信息】\n{context}\n\n"
+            f"【问题】\n{query}"
+        )
+        messages.append({"role": "user", "content": user_content})
+
+        return messages
+
 
     async def generate(
         self,
@@ -65,6 +99,7 @@ class Generator:
         model: Optional[str] = None,
         model_id: Optional[str] = None,
         api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         temperature: Optional[float] = None,
     ) -> GenerationResult:
         """
@@ -72,7 +107,8 @@ class Generator:
         """
         start_time = time.time()
 
-        model = model or settings.LLM_MODEL
+        if not model:
+            raise ValueError("Model is required for generation")
         temperature = temperature or settings.LLM_TEMPERATURE
 
         # 构造上下文
@@ -83,11 +119,11 @@ class Generator:
 
         try:
             # 获取或创建对应模型的客户端
-            client = self._get_or_create_client(model_id, model, api_key)
+            client = self._get_or_create_client(model_id, model, api_key, base_url)
             
             response = client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages= self._build_messages(query, context, conversation_history or []),
                 temperature=temperature,
                 max_tokens=settings.LLM_MAX_TOKENS,
             )
@@ -136,38 +172,6 @@ class Generator:
             context_parts.append(f"参考信息 {chunk.chunk_id}:\n{chunk.content}\n---")
 
         return "\n".join(context_parts)
-
-    def _build_messages(
-        self,
-        query: str,
-        context: str,
-        conversation_history: List[dict]
-    ) -> List[dict]:
-        """构建消息历史"""
-        system_prompt = f"""你是一个智能问答助手，基于提供的参考信息回答用户问题。
-        - 如果参考信息中包含相关内容，请基于参考信息回答
-        - 如果参考信息不足以回答，请说明信息不足
-        - 引用参考信息中的内容时，请标注来源
-        - 保持回答准确、简洁、有条理
-        """
-
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # 添加历史对话（限制长度避免超出上下文窗口）
-        if conversation_history:
-            # 只保留最近的几轮对话
-            recent_history = conversation_history[-4:]  # 最多保留4轮对话
-            messages.extend(recent_history)
-
-        # 添加当前查询和上下文
-        if context:
-            user_content = f"参考信息:\n{context}\n\n问题: {query}"
-        else:
-            user_content = f"问题: {query}"
-
-        messages.append({"role": "user", "content": user_content})
-
-        return messages
 
     def _calculate_confidence(self, retrieved_chunks: List[RetrievalResult]) -> float:
         """计算置信度"""

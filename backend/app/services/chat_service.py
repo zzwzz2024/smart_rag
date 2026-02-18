@@ -28,7 +28,6 @@ async def chat(
     user_id: str,
 ) -> ChatResponse:
     """处理用户聊天请求"""
-    global g_rag_pipeline
     # 获取或创建对话
     if request.conversation_id:
         result = await db.execute(
@@ -67,6 +66,9 @@ async def chat(
     model_name = request.model
     api_key = ""
     base_url = ""
+    embedding_model = None
+    rerank_model = None
+    
     if request.model_id:
         try:
             model_result = await db.execute(
@@ -79,19 +81,64 @@ async def chat(
                 base_url = model.base_url
         except Exception as e:
             logger.error(f"Failed to fetch model: {e}")
+    
+    # 如果提供了知识库ID，从数据库获取知识库关联的模型详情
+    if request.kb_ids:
+        try:
+            from backend.app.models.knowledge_base import KnowledgeBase
+            
+            # 获取第一个知识库的详情
+            kb_result = await db.execute(
+                select(KnowledgeBase).where(KnowledgeBase.id == request.kb_ids[0])
+            )
+            kb = kb_result.scalar_one_or_none()
+            
+            if kb:
+                # 获取embedding模型详情
+                if kb.embedding_model_id:
+                    embedding_model_result = await db.execute(
+                        select(Model).where(Model.id == kb.embedding_model_id, Model.is_active == True)
+                    )
+                    embedding_model = embedding_model_result.scalar_one_or_none()
+                
+                # 获取rerank模型详情
+                if kb.rerank_model_id:
+                    rerank_model_result = await db.execute(
+                        select(Model).where(Model.id == kb.rerank_model_id, Model.is_active == True)
+                    )
+                    rerank_model = rerank_model_result.scalar_one_or_none()
+                
+                logger.info(f"Knowledge base {kb.name} associated with embedding model: {embedding_model.name if embedding_model else 'None'}, rerank model: {rerank_model.name if rerank_model else 'None'}")
+        except Exception as e:
+            logger.error(f"Failed to fetch knowledge base models: {e}")
 
-    rag_pipeline = get_rag_pipeline(api_key=api_key, base_url=base_url)
-    # EmbeddingService(api_key, base_url)
-    # 调用 RAG Pipeline
-    result = await rag_pipeline.run(
+    # 替换原 L117-L127 块为：
+    global rag_pipeline
+
+    # 如果本次请求指定了自定义模型（embedding 或 rerank），则创建新 pipeline 实例
+    if rag_pipeline is None and embedding_model is not None and rerank_model is not None:
+        pipeline = RAGPipeline(
+            api_key=api_key,
+            base_url=base_url,
+            embedding_model=embedding_model,
+            rerank_model=rerank_model
+        )
+    else:
+        # 复用全局已初始化的 rag_pipeline（由 api/chat.py 初始化）
+        if rag_pipeline is None:
+            raise RuntimeError("全局 rag_pipeline 未初始化，请检查 api/chat.py 初始化逻辑")
+        pipeline = rag_pipeline
+
+    # 调用 pipeline.run
+    result = await pipeline.run(
         query=request.query,
         kb_ids=request.kb_ids,
         conversation_history=history,
         model=model_name,
-        api_key=api_key,
-        # model_id=request.model_id,
         temperature=request.temperature,
-        top_k=request.top_k
+        top_k=request.top_k,
+        api_key=api_key,
+        base_url=base_url
     )
 
     # 保存 AI 回复

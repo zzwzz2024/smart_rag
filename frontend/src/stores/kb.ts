@@ -24,6 +24,7 @@ export const useKbStore = defineStore('kb', {
       this.error = null
       try {
         const response = await kbApi.getKnowledgeBases()
+        // 处理不同格式的API响应
         const knowledgeBases = response.data || response
         this.knowledgeBases = knowledgeBases
         return knowledgeBases
@@ -35,12 +36,13 @@ export const useKbStore = defineStore('kb', {
       }
     },
 
-    async createKnowledgeBase(name: string, description: string) {
+    async createKnowledgeBase(data: { name: string; description: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number }) {
       this.isLoading = true
       this.error = null
       try {
-        const response = await kbApi.createKnowledgeBase({ name, description })
-        const knowledgeBase = response.data
+        const response = await kbApi.createKnowledgeBase(data)
+        // 处理不同格式的API响应
+        const knowledgeBase = response.data || response
         this.knowledgeBases.push(knowledgeBase)
         return knowledgeBase
       } catch (error: any) {
@@ -56,7 +58,8 @@ export const useKbStore = defineStore('kb', {
       this.error = null
       try {
         const response = await kbApi.getKnowledgeBase(kbId)
-        const knowledgeBase = response.data
+        // 处理不同格式的API响应
+        const knowledgeBase = response.data || response
         this.currentKnowledgeBase = knowledgeBase
         return knowledgeBase
       } catch (error: any) {
@@ -67,12 +70,13 @@ export const useKbStore = defineStore('kb', {
       }
     },
 
-    async updateKnowledgeBase(kbId: string, name?: string, description?: string) {
+    async updateKnowledgeBase(kbId: string, data: { name?: string; description?: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number }) {
       this.isLoading = true
       this.error = null
       try {
-        const response = await kbApi.updateKnowledgeBase(kbId, { name, description })
-        const knowledgeBase = response.data
+        const response = await kbApi.updateKnowledgeBase(kbId, data)
+        // 处理不同格式的API响应
+        const knowledgeBase = response.data || response
         const index = this.knowledgeBases.findIndex(kb => kb.id === kbId)
         if (index !== -1) {
           this.knowledgeBases[index] = knowledgeBase

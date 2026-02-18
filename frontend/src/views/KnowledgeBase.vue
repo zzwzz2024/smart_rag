@@ -31,12 +31,160 @@
               placeholder="请输入知识库描述"
             ></textarea>
           </div>
+          <div class="form-group">
+            <label for="kb-embedding-model">Embedding模型</label>
+            <select
+              id="kb-embedding-model"
+              v-model="newKbEmbeddingModelId"
+              class="form-control"
+            >
+              <option
+                v-for="model in modelStore.embeddingModels"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.name }} ({{ model.vendorName }})
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="kb-rerank-model">Rerank模型</label>
+            <select
+              id="kb-rerank-model"
+              v-model="newKbRerankModelId"
+              class="form-control"
+            >
+              <option
+                v-for="model in modelStore.rerankModels"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.name }} ({{ model.vendorName }})
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="kb-chunk-size">分块大小 (chunk_size)</label>
+            <input
+              type="number"
+              id="kb-chunk-size"
+              v-model.number="newKbChunkSize"
+              class="form-control"
+              min="100"
+              max="2048"
+              placeholder="请输入分块大小"
+            />
+          </div>
+          <div class="form-group">
+            <label for="kb-chunk-overlap">分块重叠 (chunk_overlap)</label>
+            <input
+              type="number"
+              id="kb-chunk-overlap"
+              v-model.number="newKbChunkOverlap"
+              class="form-control"
+              min="0"
+              max="512"
+              placeholder="请输入分块重叠"
+            />
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showCreateModal = false">
               取消
             </button>
             <button type="submit" class="btn btn-primary" :disabled="kbStore.isLoading">
               {{ kbStore.isLoading ? '创建中...' : '创建' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- 编辑知识库模态框 -->
+    <div v-if="showEditModal" class="modal-overlay" @click="showEditModal = false">
+      <div class="modal-content" @click.stop>
+        <h3>编辑知识库</h3>
+        <form @submit.prevent="updateKnowledgeBase">
+          <div class="form-group">
+            <label for="edit-kb-name">知识库名称</label>
+            <input
+              type="text"
+              id="edit-kb-name"
+              v-model="editKbName"
+              required
+              placeholder="请输入知识库名称"
+            />
+          </div>
+          <div class="form-group">
+            <label for="edit-kb-description">知识库描述</label>
+            <textarea
+              id="edit-kb-description"
+              v-model="editKbDescription"
+              rows="3"
+              placeholder="请输入知识库描述"
+            ></textarea>
+          </div>
+          <div class="form-group">
+            <label for="edit-kb-embedding-model">Embedding模型</label>
+            <select
+              id="edit-kb-embedding-model"
+              v-model="editKbEmbeddingModelId"
+              class="form-control"
+            >
+              <option
+                v-for="model in modelStore.embeddingModels"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.name }} ({{ model.vendorName }})
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="edit-kb-rerank-model">Rerank模型</label>
+            <select
+              id="edit-kb-rerank-model"
+              v-model="editKbRerankModelId"
+              class="form-control"
+            >
+              <option
+                v-for="model in modelStore.rerankModels"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.name }} ({{ model.vendorName }})
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="edit-kb-chunk-size">分块大小 (chunk_size)</label>
+            <input
+              type="number"
+              id="edit-kb-chunk-size"
+              v-model.number="editKbChunkSize"
+              class="form-control"
+              min="100"
+              max="2048"
+              placeholder="请输入分块大小"
+            />
+          </div>
+          <div class="form-group">
+            <label for="edit-kb-chunk-overlap">分块重叠 (chunk_overlap)</label>
+            <input
+              type="number"
+              id="edit-kb-chunk-overlap"
+              v-model.number="editKbChunkOverlap"
+              class="form-control"
+              min="0"
+              max="512"
+              placeholder="请输入分块重叠"
+            />
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="showEditModal = false">
+              取消
+            </button>
+            <button type="submit" class="btn btn-primary" :disabled="kbStore.isLoading">
+              {{ kbStore.isLoading ? '更新中...' : '更新' }}
             </button>
           </div>
         </form>
@@ -71,7 +219,7 @@
           <p class="kb-description">{{ kb.description }}</p>
           <div class="kb-stats">
             <span class="kb-stat-item">
-              📄 {{ kb.document_count }} 个文档
+              📄 {{ kb.doc_count }} 个文档
             </span>
             <span class="kb-stat-item">
               📅 {{ formatTime(kb.created_at) }}
@@ -99,24 +247,46 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useKbStore } from '../stores/kb'
+import { useModelStore } from '../stores/model'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import type { KnowledgeBase } from '../types'
 
 const kbStore = useKbStore()
+const modelStore = useModelStore()
 
 // 创建知识库表单
 const showCreateModal = ref(false)
 const newKbName = ref('')
 const newKbDescription = ref('')
+const newKbEmbeddingModelId = ref('')
+const newKbRerankModelId = ref('')
+const newKbChunkSize = ref(512)
+const newKbChunkOverlap = ref(64)
+
+// 编辑知识库表单
+const showEditModal = ref(false)
+const editKbId = ref('')
+const editKbName = ref('')
+const editKbDescription = ref('')
+const editKbEmbeddingModelId = ref('')
+const editKbRerankModelId = ref('')
+const editKbChunkSize = ref(512)
+const editKbChunkOverlap = ref(64)
 
 // 编辑知识库
 const editKnowledgeBase = (kb: KnowledgeBase) => {
-  // 这里可以实现编辑功能，例如打开编辑模态框
-  console.log('编辑知识库:', kb)
+  editKbId.value = kb.id
+  editKbName.value = kb.name
+  editKbDescription.value = kb.description || ''
+  editKbEmbeddingModelId.value = kb.embedding_model_id || ''
+  editKbRerankModelId.value = kb.rerank_model_id || ''
+  editKbChunkSize.value = kb.chunk_size || 512
+  editKbChunkOverlap.value = kb.chunk_overlap || 64
+  showEditModal.value = true
 }
 
 // 确认删除知识库
-const confirmDeleteKnowledgeBase = (kbId: number) => {
+const confirmDeleteKnowledgeBase = (kbId: string) => {
   ElMessageBox.confirm(
     '确定要删除这个知识库吗？删除后将无法恢复。',
     '删除确认',
@@ -139,14 +309,47 @@ const createKnowledgeBase = async () => {
   if (!newKbName.value.trim()) return
 
   try {
-    await kbStore.createKnowledgeBase(newKbName.value.trim(), newKbDescription.value.trim())
+    await kbStore.createKnowledgeBase({
+      name: newKbName.value.trim(),
+      description: newKbDescription.value.trim(),
+      embedding_model_id: newKbEmbeddingModelId.value,
+      rerank_model_id: newKbRerankModelId.value,
+      chunk_size: newKbChunkSize.value,
+      chunk_overlap: newKbChunkOverlap.value
+    })
     showCreateModal.value = false
     newKbName.value = ''
     newKbDescription.value = ''
+    newKbEmbeddingModelId.value = ''
+    newKbRerankModelId.value = ''
+    newKbChunkSize.value = 512
+    newKbChunkOverlap.value = 64
     ElMessage.success('创建知识库成功')
   } catch (error: any) {
     // 提取详细错误信息
     const errorMessage = error.response?.data?.detail || '创建知识库失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 更新知识库
+const updateKnowledgeBase = async () => {
+  if (!editKbName.value.trim()) return
+
+  try {
+    await kbStore.updateKnowledgeBase(editKbId.value, {
+      name: editKbName.value.trim(),
+      description: editKbDescription.value.trim(),
+      embedding_model_id: editKbEmbeddingModelId.value,
+      rerank_model_id: editKbRerankModelId.value,
+      chunk_size: editKbChunkSize.value,
+      chunk_overlap: editKbChunkOverlap.value
+    })
+    showEditModal.value = false
+    ElMessage.success('知识库更新成功')
+  } catch (error: any) {
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '更新知识库失败'
     ElMessage.error(errorMessage)
   }
 }
@@ -160,10 +363,14 @@ const formatTime = (timeString: string): string => {
 // 加载知识库列表
 onMounted(async () => {
   try {
-    await kbStore.getKnowledgeBases()
+    await Promise.all([
+      kbStore.getKnowledgeBases(),
+      modelStore.getEmbeddingModels(),
+      modelStore.getRerankModels()
+    ])
   } catch (error: any) {
     // 提取详细错误信息
-    const errorMessage = error.response?.data?.detail || '加载知识库列表失败'
+    const errorMessage = error.response?.data?.detail || '加载数据失败'
     ElMessage.error(errorMessage)
   }
 })

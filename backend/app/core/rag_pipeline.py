@@ -15,9 +15,9 @@ settings = get_settings()
 class RAGPipeline:
     """RAG 全流程编排"""
 
-    def __init__(self,api_key=None,base_url=None,model_name=None):
-        self.retriever = HybridRetriever(api_key,base_url,model_name)
-        self.reranker = Reranker(api_key,base_url,model_name)
+    def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None, rerank_model=None):
+        self.retriever = HybridRetriever(embedding_model=embedding_model)
+        self.reranker = Reranker(rerank_model=rerank_model)
         self.generator = Generator(api_key,base_url,model_name)
 
     async def run(
@@ -26,8 +26,9 @@ class RAGPipeline:
         kb_ids: List[str],
         conversation_history: List[dict] = None,
         model: Optional[str] = None,
-        model_id: Optional[str] = None,
         api_key: Optional[str] = None,
+        base_url:Optional[str] = None,
+        model_id: Optional[str] = None,
         temperature: Optional[float] = None,
         top_k: Optional[int] = None,
         retrieval_mode: str = "hybrid",
@@ -61,6 +62,8 @@ class RAGPipeline:
                 model=model,
                 model_id=model_id,
                 temperature=temperature,
+                api_key=api_key,
+                base_url=base_url
             )
 
         # ── Stage 2: 重排序 ──

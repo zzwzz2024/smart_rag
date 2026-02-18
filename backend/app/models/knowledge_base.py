@@ -19,6 +19,15 @@ class KnowledgeBase(Base):
     embedding_model: Mapped[str] = mapped_column(
         String(100), default="text-embedding-3-small"
     )
+    embedding_model_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("models.id"), nullable=True
+    )
+    rerank_model: Mapped[str] = mapped_column(
+        String(100), default="", nullable=True
+    )
+    rerank_model_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("models.id"), nullable=True
+    )
     chunk_size: Mapped[int] = mapped_column(Integer, default=512)
     chunk_overlap: Mapped[int] = mapped_column(Integer, default=64)
     retrieval_mode: Mapped[str] = mapped_column(

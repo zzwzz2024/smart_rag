@@ -31,8 +31,8 @@ class RetrievalResult:
 class HybridRetriever:
     """混合检索器"""
 
-    def __init__(self,api_key=None,base_url=None,model_name=None):
-        self.vector_store = VectorStore(api_key,base_url,model_name)
+    def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None):
+        self.vector_store = VectorStore(api_key,base_url,model_name, embedding_model)
 
     async def retrieve(
         self,
