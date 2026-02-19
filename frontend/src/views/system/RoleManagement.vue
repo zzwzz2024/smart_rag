@@ -34,7 +34,7 @@
         <el-table-column prop="name" label="角色名称" width="180" />
         <el-table-column prop="description" label="角色描述" />
         <el-table-column prop="createdAt" label="创建时间" width="200" />
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="操作" width="400" fixed="right">
           <template #default="scope">
             <el-button size="small" @click="editRole(scope.row)">
               <el-icon><Edit /></el-icon>
@@ -43,6 +43,10 @@
             <el-button size="small" @click="setPermissions(scope.row)">
               <el-icon><Lock /></el-icon>
               <span>权限设置</span>
+            </el-button>
+            <el-button size="small" @click="manageUsers(scope.row)">
+              <el-icon><UserIcon /></el-icon>
+              <span>用户管理</span>
             </el-button>
             <el-button size="small" type="danger" @click="deleteRole(scope.row.id)">
               <el-icon><Delete /></el-icon>
@@ -110,15 +114,47 @@
         </span>
       </template>
     </el-dialog>
+    
+    <!-- 用户管理对话框 -->
+    <el-dialog
+      v-model="showUserDialog"
+      title="用户管理"
+      width="800px"
+    >
+      <div class="user-management">
+        <el-table :data="users" style="width: 100%" border>
+          <el-table-column type="index" label="序号" width="80" />
+          <el-table-column prop="username" label="用户名" width="180" />
+          <el-table-column prop="email" label="邮箱" />
+          <el-table-column prop="createdAt" label="创建时间" width="200" />
+          <el-table-column label="操作" width="120" fixed="right">
+            <template #default="scope">
+              <el-button 
+                size="small" 
+                :type="scope.row.role_id === currentRole?.id ? 'danger' : 'primary'"
+                @click="toggleUserRole(scope.row)"
+              >
+                {{ scope.row.role_id === currentRole?.id ? '移除' : '分配' }}
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="showUserDialog = false">关闭</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Refresh, Edit, Delete, Lock } from '@element-plus/icons-vue'
-import { roleApi, permissionApi } from '../../api/system'
-import type { Role, Permission } from '../../types/system'
+import { Plus, Search, Refresh, Edit, Delete, Lock, User as UserIcon } from '@element-plus/icons-vue'
+import { roleApi, permissionApi, userApi } from '../../api/system'
+import type { Role, Permission, User } from '../../types/system'
 
 // 数据
 const roles = ref<Role[]>([])
@@ -152,6 +188,10 @@ const roleFormRef = ref()
 const showPermissionDialog = ref(false)
 const selectedPermissions = ref<string[]>([])
 const currentRole = ref<Role | null>(null)
+
+// 用户管理
+const showUserDialog = ref(false)
+const users = ref<User[]>([])
 
 // 表单验证规则
 const roleRules = {
@@ -247,6 +287,46 @@ const setPermissions = async (role: Role) => {
   showPermissionDialog.value = true
   // 这里可以加载角色现有的权限
   selectedPermissions.value = []
+}
+
+// 加载用户列表
+const loadUsers = async () => {
+  try {
+    const response = await userApi.getUsers()
+    users.value = response
+  } catch (error) {
+    console.error('加载用户列表失败:', error)
+    ElMessage.error('加载用户列表失败')
+  }
+}
+
+// 打开用户管理对话框
+const manageUsers = async (role: Role) => {
+  currentRole.value = role
+  await loadUsers()
+  showUserDialog.value = true
+}
+
+// 切换用户角色
+const toggleUserRole = async (user: User) => {
+  if (!currentRole.value) return
+  
+  try {
+    if (user.role_id === currentRole.value.id) {
+      // 移除角色
+      await userApi.updateUserRole(user.id, '')
+      ElMessage.success('角色移除成功')
+    } else {
+      // 分配角色
+      await userApi.updateUserRole(user.id, currentRole.value.id)
+      ElMessage.success('角色分配成功')
+    }
+    // 重新加载用户列表
+    await loadUsers()
+  } catch (error) {
+    console.error('操作失败:', error)
+    ElMessage.error('操作失败')
+  }
 }
 
 // 删除角色

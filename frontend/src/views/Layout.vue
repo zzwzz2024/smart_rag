@@ -838,7 +838,7 @@ body.dark-mode .context-menu li:hover {
 .content-wrapper {
   flex: 1;
   padding: 30px;
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 
 /* 响应式设计 */

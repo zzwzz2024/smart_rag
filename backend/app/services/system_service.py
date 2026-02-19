@@ -81,8 +81,11 @@ class SystemService:
             delete(RolePermission).where(RolePermission.role_id == role_permission_data.role_id)
         )
         
+        # 对权限ID列表进行去重处理
+        unique_permission_ids = list(set(role_permission_data.permission_ids))
+        
         # 添加新的权限关联
-        for permission_id in role_permission_data.permission_ids:
+        for permission_id in unique_permission_ids:
             role_permission = RolePermission(
                 role_id=role_permission_data.role_id,
                 permission_id=permission_id
