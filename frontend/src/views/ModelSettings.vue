@@ -10,6 +10,7 @@
       </el-button>
     </div>
     <el-table :data="filteredModels" style="width: 100%" border>
+      <el-table-column type="index" label="序号" width="80" />
       <el-table-column prop="name" :label="currentModelType === 'embedding' ? '模型标识' : '模型名称'" width="180" />
       <el-table-column prop="model" :label="currentModelType === 'embedding' ? '模型名称' : '模型标识'" />
       <el-table-column prop="vendorName" label="模型厂商" width="150" />

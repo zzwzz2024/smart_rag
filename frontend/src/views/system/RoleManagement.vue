@@ -30,7 +30,7 @@
     <!-- 角色列表 -->
     <div class="role-list">
       <el-table :data="roles" style="width: 100%" border>
-        <el-table-column prop="id" label="ID" width="100" />
+        <el-table-column type="index" label="序号" width="80" />
         <el-table-column prop="name" label="角色名称" width="180" />
         <el-table-column prop="description" label="角色描述" />
         <el-table-column prop="createdAt" label="创建时间" width="200" />

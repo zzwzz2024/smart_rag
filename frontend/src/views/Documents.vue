@@ -152,6 +152,7 @@
         <table class="document-table">
           <thead>
             <tr>
+              <th>序号</th>
               <th>文件名</th>
               <th>文档数量</th>
               <th>创建时间</th>
@@ -160,9 +161,10 @@
           </thead>
           <tbody>
             <tr
-              v-for="doc in kbStore.documents"
+              v-for="(doc, index) in kbStore.documents"
               :key="doc.id"
             >
+              <td>{{ index + 1 }}</td>
               <td>
                 <a href="#" class="document-link" @click.prevent="viewDocument(doc)">
                   {{ doc.filename }}

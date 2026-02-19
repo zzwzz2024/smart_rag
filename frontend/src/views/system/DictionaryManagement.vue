@@ -31,7 +31,7 @@
     
     <div class="table-container">
       <el-table :data="filteredDictionaries" style="width: 100%">
-        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column type="index" label="序号" width="80" />
         <el-table-column prop="name" label="字典名称" />
         <el-table-column prop="type" label="字典英文名" />
         <el-table-column prop="description" label="字典描述" />
@@ -61,10 +61,10 @@
               <el-icon><Delete /></el-icon>
               删除
             </el-button>
-<!--            <el-button type="info" size="small" @click="openItemsDialog(scope.row)">-->
-<!--              <el-icon><List /></el-icon>-->
-<!--              字典项-->
-<!--            </el-button>-->
+<!--            <el-button type="info" size="small" @click="openItemsDialog(scope.row)">
+              <el-icon><List /></el-icon>
+              字典项
+            </el-button>-->
           </template>
         </el-table-column>
       </el-table>

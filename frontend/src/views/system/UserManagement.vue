@@ -43,7 +43,7 @@
     <!-- 用户列表 -->
     <div class="user-list">
       <el-table v-loading="loading" :data="users" style="width: 100%" border>
-        <el-table-column prop="id" label="ID" width="100" />
+        <el-table-column type="index" label="序号" width="80" />
         <el-table-column prop="username" label="用户名" width="180" />
         <el-table-column prop="email" label="邮箱" />
         <el-table-column prop="roleName" label="角色" width="150" />
