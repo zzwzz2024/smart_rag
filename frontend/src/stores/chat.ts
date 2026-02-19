@@ -57,26 +57,31 @@ export const useChatStore = defineStore('chat', {
       this.isSending = true
       this.error = null
       try {
-        const response = await chatApi.sendMessage({
+        // 构建用户消息
+        const userMessage = {
+          id: Date.now(),
+          conversation_id: this.currentConversation?.id || `temp_${Date.now()}`,
+          role: 'user' as const,
+          content: message,
+          created_at: new Date().toISOString()
+        }
+
+        // 立即添加用户消息到消息列表
+        this.messages.push(userMessage)
+
+        // 发送消息到API
+        const chatResponse = await chatApi.sendMessage({
           conversation_id: this.currentConversation?.id,
           query: message,
           kb_ids: knowledgeBaseId ? [knowledgeBaseId] : [],
           model_id: modelId
         })
-        const chatResponse = response.data || response
         if (chatResponse.detail) {
           this.error = chatResponse.detail; // 设置全局错误状态
           ElMessage.error(this.error)
+          // 移除已添加的用户消息
+          this.messages = this.messages.filter(m => m.id !== userMessage.id)
           throw new Error(chatResponse.detail); // 抛出异常供上层捕获
-        }
-
-        // 构建用户消息
-        const userMessage = {
-          id: Date.now(),
-          conversation_id: chatResponse.conversation_id,
-          role: 'user' as const,
-          content: message,
-          created_at: new Date().toISOString()
         }
 
         // 构建助手消息
@@ -84,16 +89,49 @@ export const useChatStore = defineStore('chat', {
           id: chatResponse.message_id,
           conversation_id: chatResponse.conversation_id,
           role: 'assistant' as const,
-          content: chatResponse.answer,
+          content: chatResponse.answer || chatResponse.content,
           citations: chatResponse.citations,
           confidence: chatResponse.confidence,
           created_at: new Date().toISOString()
         }
 
-        // 更新消息列表
+        // 更新消息列表和对话
         if (this.currentConversation) {
-          this.messages.push(userMessage)
-          this.messages.push(assistantMessage)
+          // 检查是否是临时对话
+          if (this.currentConversation.id.startsWith('temp_')) {
+            // 替换临时对话为真实对话
+            const tempIndex = this.conversations.findIndex(c => c.id === this.currentConversation?.id)
+            
+            const realConversation: Conversation = {
+              id: chatResponse.conversation_id,
+              title: message.substring(0, 30) + '...',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              pinned: this.currentConversation.pinned || false,
+              messages: [userMessage, assistantMessage]
+            }
+            
+            // 更新或替换对话
+            if (tempIndex > -1) {
+              this.conversations.splice(tempIndex, 1, realConversation)
+            } else {
+              this.conversations.unshift(realConversation)
+            }
+            
+            this.currentConversation = realConversation
+            
+            // 更新用户消息的conversation_id为真实ID
+            const userMsgIndex = this.messages.findIndex(m => m.id === userMessage.id)
+            if (userMsgIndex > -1) {
+              this.messages[userMsgIndex].conversation_id = chatResponse.conversation_id
+            }
+            
+            // 添加助手消息
+            this.messages.push(assistantMessage)
+          } else {
+            // 现有对话，添加助手消息
+            this.messages.push(assistantMessage)
+          }
         } else {
           // 创建新对话
           const newConversation: Conversation = {
@@ -105,6 +143,15 @@ export const useChatStore = defineStore('chat', {
           }
           this.currentConversation = newConversation
           this.conversations.push(newConversation)
+          
+          // 更新用户消息的conversation_id为真实ID
+          const userMsgIndex = this.messages.findIndex(m => m.id === userMessage.id)
+          if (userMsgIndex > -1) {
+            this.messages[userMsgIndex].conversation_id = chatResponse.conversation_id
+          }
+          
+          // 添加助手消息
+          this.messages.push(assistantMessage)
         }
 
         return assistantMessage
@@ -187,8 +234,13 @@ export const useChatStore = defineStore('chat', {
 
     setCurrentConversation(conversation: Conversation | null) {
       this.currentConversation = conversation
-      // 不要覆盖已加载的消息，只在conversation有messages属性时使用
-      // this.messages = conversation?.messages || []
+      // 对于新对话，清空消息列表
+      if (conversation && conversation.id.startsWith('temp_')) {
+        this.messages = []
+      } else if (conversation?.messages) {
+        // 只在conversation有messages属性时使用
+        this.messages = conversation.messages
+      }
     }
   }
 })

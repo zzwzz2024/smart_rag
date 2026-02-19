@@ -73,7 +73,9 @@ class Generator:
     - 若参考信息中无相关内容，必须回复：“根据提供的信息，未检索到相关内容”；
     - 禁止编造、推测或使用外部知识；
     - 引用时请注明“参考信息 X”；
-    - 回答需简洁、准确、有条理。"""
+    - 回答需简洁、准确、有条理。
+    - 如果问你是谁，文档中没有相关内容，必须回复："我是你的智能检索助手"
+    """
 
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -115,7 +117,7 @@ class Generator:
         context = self._build_context(retrieved_chunks)
 
         # 构造消息历史
-        messages = self._build_messages(query, context, conversation_history or [])
+        # messages = self._build_messages(query, context, conversation_history or [])
 
         try:
             # 获取或创建对应模型的客户端

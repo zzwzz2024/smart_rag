@@ -35,13 +35,14 @@ async def chat(
         )
         conversation = result.scalar_one_or_none()
         if not conversation:
+            # 为新对话生成新的UUID，不使用前端的临时ID
             conversation = Conversation(
-                id=request.conversation_id,
                 user_id=user_id,
                 kb_id=request.kb_ids[0] if request.kb_ids else None,
                 title=request.query[:50],
             )
             db.add(conversation)
+            await db.flush()
     else:
         conversation = Conversation(
             user_id=user_id,

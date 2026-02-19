@@ -256,6 +256,7 @@ const selectedFile = ref<File | null>(null)
 const selectedDocument = ref<any>(null)
 const documentChunks = ref<any[]>([])
 const isLoadingDocument = ref(false)
+const isInitializingModels = ref(false)
 const searchParams = ref({
   filename: '',
   created_from: '',
@@ -379,6 +380,22 @@ const formatTime = (timeString: string): string => {
   return date.toLocaleString('zh-CN')
 }
 
+// 初始化知识库模型
+const initializeKbModels = async (kbId: string) => {
+  try {
+    isInitializingModels.value = true
+    await documentApi.initializeKbModels(kbId)
+    console.log('知识库模型初始化成功')
+  } catch (error: any) {
+    console.error('初始化知识库模型失败:', error)
+    // 提取详细错误信息
+    const errorMessage = error.response?.data?.detail || '初始化知识库模型失败'
+    ElMessage.warning(errorMessage)
+  } finally {
+    isInitializingModels.value = false
+  }
+}
+
 // 监听知识库选择变化
 watch(selectedKnowledgeBase, async (newKbId) => {
   if (newKbId) {
@@ -387,7 +404,8 @@ watch(selectedKnowledgeBase, async (newKbId) => {
       searchParams.value.page = 1
       await Promise.all([
         kbStore.getKnowledgeBase(newKbId),
-        kbStore.getDocuments(newKbId, searchParams.value)
+        kbStore.getDocuments(newKbId, searchParams.value),
+        initializeKbModels(newKbId)
       ])
     } catch (error) {
       console.error('加载知识库文档失败:', error)

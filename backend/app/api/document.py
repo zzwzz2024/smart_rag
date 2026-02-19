@@ -11,15 +11,72 @@ from backend.app.database import get_db, async_session_factory
 from backend.app.models.user import User
 from backend.app.models.document import Document, DocumentChunk
 from backend.app.models.knowledge_base import KnowledgeBase
+from backend.app.models.model import Model
 from backend.app.schemas.document import DocumentResponse, ChunkResponse
 from backend.app.utils.auth import get_current_user
 from backend.app.services.doc_service import process_document
 from backend.app.core.vector_store import VectorStore
 from backend.app.config import get_settings
+import backend.app.services.chat_service as chat_service
+from backend.app.core.rag_pipeline import RAGPipeline
 
 router = APIRouter()
 settings = get_settings()
 vector_store = VectorStore()
+
+
+@router.post("/initialize/{kb_id}", response_model=dict)
+async def initialize_kb_models(
+    kb_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """初始化知识库关联的模型"""
+    # 验证知识库
+    result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+    )
+    kb = result.scalar_one_or_none()
+    if not kb or kb.owner_id != user.id:
+        raise HTTPException(404, "知识库不存在")
+
+    # 初始化模型变量
+    embedding_model = None
+    rerank_model = None
+    api_key = None
+    base_url = None
+
+    # 获取embedding模型详情
+    if kb.embedding_model_id:
+        embedding_model_result = await db.execute(
+            select(Model).where(Model.id == kb.embedding_model_id, Model.is_active == True)
+        )
+        embedding_model = embedding_model_result.scalar_one_or_none()
+        if embedding_model:
+            api_key = embedding_model.api_key
+            base_url = embedding_model.base_url
+
+    # 获取rerank模型详情
+    if kb.rerank_model_id:
+        rerank_model_result = await db.execute(
+            select(Model).where(Model.id == kb.rerank_model_id, Model.is_active == True)
+        )
+        rerank_model = rerank_model_result.scalar_one_or_none()
+
+    # 初始化RAG pipeline，传递知识库关联的模型
+    chat_service.rag_pipeline = RAGPipeline(
+        api_key=api_key,
+        base_url=base_url,
+        embedding_model=embedding_model,
+        rerank_model=rerank_model
+    )
+
+    return {
+        "message": f"知识库 {kb.name} 模型初始化成功",
+        "kb_id": kb_id,
+        "embedding_model": embedding_model.name if embedding_model else "None",
+        "rerank_model": rerank_model.name if rerank_model else "None"
+    }
 
 
 @router.post("/upload/{kb_id}", response_model=dict)

@@ -95,6 +95,7 @@ class RAGPipeline:
             model_id=model_id,
             api_key=api_key,
             temperature=temperature,
+            base_url=base_url
         )
 
         logger.info(

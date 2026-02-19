@@ -29,6 +29,14 @@ export const documentApi = {
     })
   },
 
+  // 初始化知识库模型
+  initializeKbModels(kbId: string) {
+    return request({
+      url: `/document/initialize/${kbId}`,
+      method: 'post'
+    })
+  },
+
   // 获取文档分块内容
   getDocumentChunks(docId: string) {
     return request({

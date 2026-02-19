@@ -272,7 +272,6 @@ const sendMessage = async () => {
   if (!inputMessage.value.trim()) return
 
   const message = inputMessage.value.trim()
-  inputMessage.value = ''
 
   try {
     const kbId = selectedKnowledgeBase.value !== '' ? selectedKnowledgeBase.value : undefined
@@ -284,6 +283,8 @@ const sendMessage = async () => {
       ElMessage.error('请先选择一个模型，如果没有可用模型，请前往模型设置页面配置')
     } else {
       await chatStore.sendMessage(message, kbId, modelId)
+      // 发送成功后清空输入
+      inputMessage.value = ''
       // 滚动到聊天消息底部
       scrollToBottom()
     }
@@ -296,7 +297,22 @@ const sendMessage = async () => {
 
 // 开始新对话
 const startNewConversation = () => {
-  chatStore.setCurrentConversation(null)
+  // 立即创建一个新对话对象
+  const newConversation: Conversation = {
+    id: `temp_${Date.now()}`, // 临时ID，后端会替换
+    title: '新对话',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    pinned: false
+  }
+  
+  // 添加到对话历史
+  chatStore.conversations.unshift(newConversation)
+  
+  // 设置为当前对话
+  chatStore.setCurrentConversation(newConversation)
+  
+  // 重置输入状态
   inputMessage.value = ''
   selectedKnowledgeBase.value = ''
   selectedModel.value = ''

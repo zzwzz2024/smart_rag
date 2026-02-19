@@ -39,6 +39,10 @@ class VectorStore:
             return
         self._initialized = False
         logger.info(f"VectorStore初始化url:{base_url}, model:{model_name}, embedding_model:{embedding_model}")
+        # if api_key is None or base_url is None or model_name is None and embedding_model is None:
+        #     logger.error("VectorStore初始化失败, api_key, base_url, model_name, embedding_model 模型参数为空")
+        #     logger.info("无需初始化VectorStore")
+        # else:
         self.client = chromadb.PersistentClient(
             path=settings.CHROMA_PERSIST_DIR,
             settings=ChromaSettings(anonymized_telemetry=False),
