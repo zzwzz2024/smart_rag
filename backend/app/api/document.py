@@ -19,13 +19,14 @@ from backend.app.core.vector_store import VectorStore
 from backend.app.config import get_settings
 import backend.app.services.chat_service as chat_service
 from backend.app.core.rag_pipeline import RAGPipeline
+from backend.app.models.response_model import Response
 
 router = APIRouter()
 settings = get_settings()
 vector_store = VectorStore()
 
 
-@router.post("/initialize/{kb_id}", response_model=dict)
+@router.post("/initialize/{kb_id}", response_model=Response)
 async def initialize_kb_models(
     kb_id: str,
     db: AsyncSession = Depends(get_db),
@@ -71,15 +72,15 @@ async def initialize_kb_models(
         rerank_model=rerank_model
     )
 
-    return {
+    return Response(data={
         "message": f"知识库 {kb.name} 模型初始化成功",
         "kb_id": kb_id,
         "embedding_model": embedding_model.name if embedding_model else "None",
         "rerank_model": rerank_model.name if rerank_model else "None"
-    }
+    })
 
 
-@router.post("/upload/{kb_id}", response_model=dict)
+@router.post("/upload/{kb_id}", response_model=Response)
 async def upload_document(
     kb_id: str,
     background_tasks: BackgroundTasks,
@@ -116,11 +117,11 @@ async def upload_document(
     # 后台异步处理文档，处理成功后才创建文档记录
     background_tasks.add_task(_process_doc_background, file_id, kb_id, file.filename, file_path, ext.lstrip("."), len(content))
 
-    return {
+    return Response(data={
         "message": "文档上传成功，正在处理中",
         "file_id": file_id,
         "filename": file.filename
-    }
+    })
 
 
 async def _process_doc_background(doc_id: str, kb_id: str, filename: str, file_path: str, file_type: str, file_size: int):
@@ -155,7 +156,7 @@ async def _process_doc_background(doc_id: str, kb_id: str, filename: str, file_p
             os.remove(file_path)
         raise
 
-@router.get("/list/{kb_id}", response_model=dict)
+@router.get("/list/{kb_id}", response_model=Response)
 async def list_documents(
     kb_id: str,
     filename: str = None,
@@ -206,16 +207,16 @@ async def list_documents(
     docs = result.scalars().all()
     
     # 构建响应
-    return {
+    return Response(data={
         "data": [DocumentResponse.model_validate(d) for d in docs],
         "total": total,
         "page": page,
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size
-    }
+    })
 
 
-@router.get("/{doc_id}/chunks", response_model=List[ChunkResponse])
+@router.get("/{doc_id}/chunks", response_model=Response)
 async def get_chunks(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
@@ -228,10 +229,10 @@ async def get_chunks(
         .order_by(DocumentChunk.chunk_index)
     )
     chunks = result.scalars().all()
-    return [ChunkResponse.model_validate(c) for c in chunks]
+    return Response(data=[ChunkResponse.model_validate(c) for c in chunks])
 
 
-@router.delete("/{doc_id}")
+@router.delete("/{doc_id}", response_model=Response)
 async def delete_document(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
@@ -251,4 +252,4 @@ async def delete_document(
         os.remove(doc.file_path)
 
     await db.delete(doc)
-    return {"message": "已删除"}
+    return Response(data={"message": "已删除"})

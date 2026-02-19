@@ -22,7 +22,13 @@ request.interceptors.request.use(
 // 响应拦截器
 request.interceptors.response.use(
   (response) => {
-    return response.data
+    // 处理统一的响应格式
+    const data = response.data
+    if (data.code === 200) {
+      return data.data // 直接返回data字段，保持向后兼容
+    } else {
+      return Promise.reject(new Error(data.msg || '请求失败'))
+    }
   },
   (error) => {
     if (error.response.status === 401) {

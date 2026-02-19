@@ -5,6 +5,7 @@ from typing import Optional
 import uuid
 from backend.app.database import get_db
 from backend.app.models.model import Model, ModelType, ModelVendor
+from backend.app.models.response_model import Response
 from backend.app.schemas.model import (
     ModelCreate, ModelUpdate, ModelResponse, ModelListResponse,
     ModelVendorCreate, ModelVendorUpdate, ModelVendorResponse, ModelVendorListResponse
@@ -348,7 +349,7 @@ def _validate_response_body(model_type: str, resp: dict, is_anthropic: bool):
                 detail="响应格式异常：返回 200 但不含 'results'，请检查 Rerank 接口地址"
             )
 
-@router.post("/", response_model=ModelResponse)
+@router.post("/", response_model=Response)
 async def create_model(
     model_in: ModelCreate,
     db: AsyncSession = Depends(get_db),
@@ -386,10 +387,10 @@ async def create_model(
     db.add(model)
     await db.commit()
     await db.refresh(model)
-    return model
+    return Response(data=model)
 
 
-@router.get("/list", response_model=ModelListResponse)
+@router.get("/list", response_model=Response)
 async def list_models(
     type: Optional[ModelType] = Query(None, description="模型类型"),
     page: int = Query(1, ge=1, description="页码"),
@@ -443,13 +444,13 @@ async def list_models(
         }
         model_responses.append(ModelResponse(**model_dict))
 
-    return ModelListResponse(
+    return Response(data=ModelListResponse(
         total=total,
         items=model_responses
-    )
+    ))
 
 
-@router.get("/{model_id}", response_model=ModelResponse)
+@router.get("/{model_id}", response_model=Response)
 async def get_model(
     model_id: str,
     db: AsyncSession = Depends(get_db),
@@ -480,10 +481,10 @@ async def get_model(
         "createdAt": model.created_at,
         "updatedAt": model.updated_at
     }
-    return ModelResponse(**model_dict)
+    return Response(data=ModelResponse(**model_dict))
 
 
-@router.put("/{model_id}", response_model=ModelResponse)
+@router.put("/{model_id}", response_model=Response)
 async def update_model(
     model_id: str,
     model_in: ModelUpdate,
@@ -547,10 +548,10 @@ async def update_model(
         "createdAt": model.created_at,
         "updatedAt": model.updated_at
     }
-    return ModelResponse(**model_dict)
+    return Response(data=ModelResponse(**model_dict))
 
 
-@router.delete("/{model_id}")
+@router.delete("/{model_id}", response_model=Response)
 async def delete_model(
     model_id: str,
     db: AsyncSession = Depends(get_db),
@@ -564,10 +565,10 @@ async def delete_model(
 
     await db.delete(model)
     await db.commit()
-    return {"message": "模型删除成功"}
+    return Response(data={"message": "模型删除成功"})
 
 
-@router.put("/{model_id}/set-default", response_model=ModelResponse)
+@router.put("/{model_id}/set-default", response_model=Response)
 async def set_default_model(
     model_id: str,
     db: AsyncSession = Depends(get_db),
@@ -616,11 +617,11 @@ async def set_default_model(
         "createdAt": model.created_at,
         "updatedAt": model.updated_at
     }
-    return ModelResponse(**model_dict)
+    return Response(data=ModelResponse(**model_dict))
 
 
 # 模型厂商相关端点
-@router.get("/vendor/list", response_model=ModelVendorListResponse)
+@router.get("/vendor/list", response_model=Response)
 async def list_model_vendors(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(10, ge=1, le=100, description="每页条数"),
@@ -641,13 +642,13 @@ async def list_model_vendors(
     vendors_result = await db.execute(query)
     vendors = vendors_result.scalars().all()
 
-    return ModelVendorListResponse(
+    return Response(data=ModelVendorListResponse(
         total=total,
         items=vendors
-    )
+    ))
 
 
-@router.get("/vendor/{vendor_id}", response_model=ModelVendorResponse)
+@router.get("/vendor/{vendor_id}", response_model=Response)
 async def get_model_vendor(
     vendor_id: str,
     db: AsyncSession = Depends(get_db),
@@ -658,10 +659,10 @@ async def get_model_vendor(
     vendor = vendor.scalar()
     if not vendor:
         raise HTTPException(status_code=404, detail="模型厂商不存在")
-    return vendor
+    return Response(data=vendor)
 
 
-@router.post("/vendor", response_model=ModelVendorResponse)
+@router.post("/vendor", response_model=Response)
 async def create_model_vendor(
     vendor_in: ModelVendorCreate,
     db: AsyncSession = Depends(get_db),
@@ -684,10 +685,10 @@ async def create_model_vendor(
     db.add(vendor)
     await db.commit()
     await db.refresh(vendor)
-    return vendor
+    return Response(data=vendor)
 
 
-@router.put("/vendor/{vendor_id}", response_model=ModelVendorResponse)
+@router.put("/vendor/{vendor_id}", response_model=Response)
 async def update_model_vendor(
     vendor_id: str,
     vendor_in: ModelVendorUpdate,
@@ -715,10 +716,10 @@ async def update_model_vendor(
 
     await db.commit()
     await db.refresh(vendor)
-    return vendor
+    return Response(data=vendor)
 
 
-@router.delete("/vendor/{vendor_id}")
+@router.delete("/vendor/{vendor_id}", response_model=Response)
 async def delete_model_vendor(
     vendor_id: str,
     db: AsyncSession = Depends(get_db),
@@ -739,4 +740,4 @@ async def delete_model_vendor(
 
     await db.delete(vendor)
     await db.commit()
-    return {"message": "模型厂商删除成功"}
+    return Response(data={"message": "模型厂商删除成功"})

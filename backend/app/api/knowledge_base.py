@@ -136,7 +136,7 @@ async def list_kbs(
     )
 
 
-@router.get("/knowledge-base/{kb_id}", response_model=KBResponse)
+@router.get("/knowledge-base/{kb_id}", response_model=Response)
 async def get_kb(
     kb_id: str,
     db: AsyncSession = Depends(get_db),
@@ -149,10 +149,10 @@ async def get_kb(
     kb = result.scalar_one_or_none()
     if not kb or kb.owner_id != user.id:
         raise HTTPException(404, "知识库不存在")
-    return KBResponse.model_validate(kb)
+    return Response(data=KBResponse.model_validate(kb))
 
 
-@router.put("/knowledge-base/{kb_id}", response_model=KBResponse)
+@router.put("/knowledge-base/{kb_id}", response_model=Response)
 async def update_kb(
     kb_id: str,
     data: dict,
@@ -185,7 +185,7 @@ async def update_kb(
                     detail=f"embedding模型ID '{embedding_model_id}' 不存在或未激活"
                 )
             data['embedding_model'] = embedding_model.model
-    
+
     # 验证rerank模型是否有效（如果提供了新值）
     if data.get('rerank_model_id') is not None:
         rerank_model_id = data.get('rerank_model_id')
@@ -211,10 +211,10 @@ async def update_kb(
 
     await db.commit()
     await db.refresh(kb)
-    return KBResponse.model_validate(kb)
+    return Response(data=KBResponse.model_validate(kb))
 
 
-@router.delete("/knowledge-base/{kb_id}")
+@router.delete("/knowledge-base/{kb_id}", response_model=Response)
 async def delete_kb(
     kb_id: str,
     db: AsyncSession = Depends(get_db),
@@ -232,4 +232,4 @@ async def delete_kb(
     vector_store.delete_collection(kb_id)
     # 级联删除（ORM 配置了 cascade）
     await db.delete(kb)
-    return {"message": "已删除"}
+    return Response(data={"message": "已删除"})

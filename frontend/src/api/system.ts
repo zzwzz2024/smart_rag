@@ -25,7 +25,18 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
   response => {
-    return response.data
+    const data = response.data
+    // 检查是否为统一响应格式
+    if (data && typeof data === 'object' && 'code' in data && 'data' in data) {
+      // 如果code不是200，视为错误
+      if (data.code !== 200) {
+        return Promise.reject(new Error(data.msg || '请求失败'))
+      }
+      // 返回data字段的内容
+      return data.data
+    }
+    // 兼容旧格式
+    return data
   },
   error => {
     console.error('API请求错误:', error)

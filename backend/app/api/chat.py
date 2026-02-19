@@ -23,7 +23,9 @@ import backend.app.services.chat_service as chat_service
 router = APIRouter()
 
 
-@router.post("", response_model=ChatResponse)
+from backend.app.models.response_model import Response
+
+@router.post("", response_model=Response)
 async def chat(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
@@ -37,7 +39,7 @@ async def chat(
         raise HTTPException(400, "请选择一个模型，如果没有可用模型，请前往模型设置页面配置")
 
     response = await chat_service.chat(db, request, user.id)
-    return response
+    return Response(data=response)
 
 
 @router.post("/stream")
@@ -71,7 +73,7 @@ async def chat_stream(
     )
 
 
-@router.get("/conversations", response_model=List[ConversationResponse])
+@router.get("/conversations", response_model=Response)
 async def list_conversations(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -84,10 +86,10 @@ async def list_conversations(
         .limit(50)
     )
     conversations = result.scalars().all()
-    return [ConversationResponse.model_validate(c) for c in conversations]
+    return Response(data=[ConversationResponse.model_validate(c) for c in conversations])
 
 
-@router.get("/conversations/{conv_id}/messages", response_model=List[MessageResponse])
+@router.get("/conversations/{conv_id}/messages", response_model=Response)
 async def get_messages(
     conv_id: str,
     db: AsyncSession = Depends(get_db),
@@ -100,7 +102,7 @@ async def get_messages(
         .order_by(Message.created_at)
     )
     messages = result.scalars().all()
-    return [MessageResponse.model_validate(m) for m in messages]
+    return Response(data=[MessageResponse.model_validate(m) for m in messages])
 
 
 @router.post("/feedback")
@@ -119,7 +121,7 @@ async def submit_feedback(
     return {"message": "反馈已提交"}
 
 
-@router.delete("/conversations/{conv_id}")
+@router.delete("/conversations/{conv_id}", response_model=Response)
 async def delete_conversation(
     conv_id: str,
     db: AsyncSession = Depends(get_db),
@@ -133,10 +135,10 @@ async def delete_conversation(
     if not conv or conv.user_id != user.id:
         raise HTTPException(404, "对话不存在")
     await db.delete(conv)
-    return {"message": "已删除"}
+    return Response(data={"message": "已删除"})
 
 
-@router.put("/conversations/{conv_id}/title")
+@router.put("/conversations/{conv_id}/title", response_model=Response)
 async def update_conversation_title(
     conv_id: str,
     title: dict,
@@ -153,10 +155,10 @@ async def update_conversation_title(
     
     conv.title = title.get("title", conv.title)
     await db.commit()
-    return {"message": "标题已更新", "title": conv.title}
+    return Response(data={"message": "标题已更新", "title": conv.title})
 
 
-@router.put("/conversations/{conv_id}/pinned")
+@router.put("/conversations/{conv_id}/pinned", response_model=Response)
 async def toggle_conversation_pinned(
     conv_id: str,
     pinned: dict,
@@ -173,10 +175,10 @@ async def toggle_conversation_pinned(
     
     conv.pinned = pinned.get("pinned", False)
     await db.commit()
-    return {"message": "置顶状态已更新", "pinned": conv.pinned}
+    return Response(data={"message": "置顶状态已更新", "pinned": conv.pinned})
 
 
-@router.post("/initialize-model")
+@router.post("/initialize-model", response_model=Response)
 async def initialize_model(
     model_data: dict,
     db: AsyncSession = Depends(get_db),
@@ -226,4 +228,4 @@ async def initialize_model(
         rerank_model=rerank_model
     )
 
-    return {"message": f"模型 {model.name} 配置验证成功", "model_id": model_id, "model": model.model}
+    return Response(data={"message": f"模型 {model.name} 配置验证成功", "model_id": model_id, "model": model.model})

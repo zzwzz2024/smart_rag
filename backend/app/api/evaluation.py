@@ -13,13 +13,14 @@ from backend.app.schemas.evaluation import EvalReport, EvalMetrics, EvalCreate, 
 from backend.app.utils.auth import get_current_user
 from backend.app.core.evaluator import Evaluator
 from backend.app.core.rag_pipeline import RAGPipeline
+from backend.app.models.response_model import Response
 
 router = APIRouter()
 evaluator = Evaluator()
 pipeline = RAGPipeline()
 
 
-@router.get("/report/{kb_id}", response_model=EvalReport)
+@router.get("/report/{kb_id}", response_model=Response)
 async def get_eval_report(
     kb_id: str,
     period: int = 30,
@@ -32,15 +33,15 @@ async def get_eval_report(
     )
     kb = result.scalar_one_or_none()
     if not kb:
-        return EvalReport(
+        report = EvalReport(
             kb_id=kb_id, kb_name="未知", metrics=EvalMetrics(), period=f"{period}d"
         )
+    else:
+        report = await evaluator.generate_report(db, kb_id, kb.name, period)
+    return Response(data=report)
 
-    report = await evaluator.generate_report(db, kb_id, kb.name, period)
-    return report
 
-
-@router.get("", response_model=list[EvalResponse])
+@router.get("", response_model=Response)
 async def get_evaluations(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -48,10 +49,10 @@ async def get_evaluations(
     """获取评估列表"""
     result = await db.execute(select(Evaluation).order_by(Evaluation.created_at.desc()))
     evaluations = result.scalars().all()
-    return [EvalResponse.model_validate(eval) for eval in evaluations]
+    return Response(data=[EvalResponse.model_validate(eval) for eval in evaluations])
 
 
-@router.post("", response_model=EvalResponse)
+@router.post("", response_model=Response)
 async def create_evaluation(
     eval_data: EvalCreate,
     db: AsyncSession = Depends(get_db),
@@ -86,10 +87,10 @@ async def create_evaluation(
     await db.commit()
     await db.refresh(evaluation)
     
-    return EvalResponse.model_validate(evaluation)
+    return Response(data=EvalResponse.model_validate(evaluation))
 
 
-@router.delete("/{eval_id}")
+@router.delete("/{eval_id}", response_model=Response)
 async def delete_evaluation(
     eval_id: int,
     db: AsyncSession = Depends(get_db),
@@ -105,4 +106,4 @@ async def delete_evaluation(
     await db.delete(evaluation)
     await db.commit()
     
-    return {"message": "评估已删除"}
+    return Response(data={"message": "评估已删除"})
