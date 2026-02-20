@@ -1,0 +1,3 @@
+INSERT INTO "dictionaries" ("id", "name", "type", "description", "created_at", "updated_at") VALUES ('1', '模型厂商', 'model_vendor', 'AI模型厂商字典', '2026-02-13 23:26:40.668186', '2026-02-13 23:26:40.668186');
+INSERT INTO "dictionaries" ("id", "name", "type", "description", "created_at", "updated_at") VALUES ('2', '用户状态', 'user_status', '用户状态字典', '2026-02-13 23:26:40.668186', '2026-02-13 23:26:40.668186');
+INSERT INTO "dictionaries" ("id", "name", "type", "description", "created_at", "updated_at") VALUES ('3', '文档类型', 'document_type', '文档类型字典', '2026-02-13 23:26:40.668186', '2026-02-13 23:26:40.668186');

@@ -1,6 +1,46 @@
 """
 效果评估 API
+
+评估算法整体逻辑和实现思路：
+
+1. 核心评分维度：
+   - 语义相似度 (0-0.4)：计算AI回答与参考答案的语义相似度，使用Sentence-BERT模型
+   - 事实性评分 (0-0.3)：检测AI回答中的事实性陈述是否与知识库一致
+   - 完整性评分 (0-0.1)：评估回答的长度和信息覆盖度
+   - 连贯性评分 (0-0.1)：评估回答的句子结构和逻辑连贯性
+   - 相关性评分 (0-0.1)：评估回答与问题的相关程度
+
+2. 特殊情况处理：
+   - 双方都未检索到：当AI回答和参考答案都表示未检索到时，给予高分(0.9)
+   - AI未检索到但参考答案明确：给予中等分数(0.4)，因为AI基于实际知识库情况
+   - AI未检索到且参考答案不明确：给予较高分数(0.7)
+   - 语义相反：当检测到明确的相反语义时，给予低分(0.2)
+
+3. 算法流程：
+   a. 接收评估请求，包含问题、参考答案、知识库ID和模型ID
+   b. 使用RAGPipeline生成AI回答
+   c. 检测是否为未检索到的特殊情况
+   d. 若为特殊情况，直接应用对应评分规则
+   e. 若为常规情况，计算各维度评分并加权汇总
+   f. 确保最终分数在0-1之间
+
+4. 关键技术实现：
+   - 语义相似度：使用Sentence-BERT模型生成嵌入向量，计算余弦相似度
+   - 事实性检查：从知识库检索相关信息，验证AI回答中的事实性陈述
+   - 相反语义检测：使用LLM（如OpenAI模型）检测语义相反情况
+   - 多维度评分：综合考虑多个维度，加权计算最终分数
+
+5. 性能优化：
+   - 使用异步操作处理数据库查询和向量检索
+   - 实现模型参数的合理传递和重用
+   - 添加错误处理和降级机制
+
+6. 扩展能力：
+   - 支持按知识库ID过滤评估结果
+   - 支持按问题名称模糊搜索评估结果
+   - 提供评估报告生成功能
 """
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -508,32 +548,55 @@ async def create_evaluation(
     score = 0.0
     
     if rag_answer:
-        # 检查是否存在明确的相反语义
-        has_opposite_meaning = await contains_opposite_meaning(rag_answer, eval_data.reference_answer, chat_model)
+        # 检查是否为未检索到相关内容的情况
+        no_retrieval_answer = any(phrase in rag_answer for phrase in ['未检索到', '未找到', '没有找到', '没有相关'])
+        no_retrieval_reference = any(phrase in eval_data.reference_answer for phrase in ['未检索到', '未找到', '没有找到', '没有相关'])
         
-        if has_opposite_meaning:
-            # 明确的相反语义，直接给予很低的分数
-            score = 0.2
+        # 特殊情况处理：双方都未检索到
+        if no_retrieval_answer and no_retrieval_reference:
+            # 双方都未检索到，给予很高的分数
+            score = 0.9
+        # 特殊情况处理：AI未检索到，但参考答案是明确的
+        elif no_retrieval_answer and not no_retrieval_reference:
+            # 检查参考答案是否是明确的肯定或否定
+            reference_lower = eval_data.reference_answer.lower()
+            has_explicit_answer = any(word in reference_lower for word in ['在', '有', '是', '写了', '没在', '没有', '不是', '没写'])
+            
+            if has_explicit_answer:
+                # AI未检索到，但参考答案明确，给予中等分数
+                # 因为AI的回答是基于知识库的，可能知识库确实没有相关信息
+                score = 0.4
+            else:
+                # 参考答案也不明确，给予较高分数
+                score = 0.7
         else:
-            # 1. 语义相似度评分 (0-0.4)
-            semantic_score = await calculate_semantic_similarity(rag_answer, eval_data.reference_answer, chat_model)
-            score += semantic_score * 0.4
+            # 常规评分逻辑
+            # 检查是否存在明确的相反语义
+            has_opposite_meaning = await contains_opposite_meaning(rag_answer, eval_data.reference_answer, chat_model)
             
-            # 2. 事实性评分 (0-0.3)
-            factuality_score = await calculate_factuality(rag_answer, kb_id, chat_model)
-            score += factuality_score * 0.3
-            
-            # 3. 完整性评分 (0-0.1)
-            completeness_score = calculate_completeness(rag_answer, eval_data.reference_answer)
-            score += completeness_score * 0.1
-            
-            # 4. 连贯性评分 (0-0.1)
-            coherence_score = calculate_coherence(rag_answer)
-            score += coherence_score * 0.1
-            
-            # 5. 相关性评分 (0-0.1)
-            relevance_score = calculate_relevance(rag_answer, eval_data.query)
-            score += relevance_score * 0.1
+            if has_opposite_meaning:
+                # 明确的相反语义，直接给予很低的分数
+                score = 0.2
+            else:
+                # 1. 语义相似度评分 (0-0.4)
+                semantic_score = await calculate_semantic_similarity(rag_answer, eval_data.reference_answer, chat_model)
+                score += semantic_score * 0.4
+                
+                # 2. 事实性评分 (0-0.3)
+                factuality_score = await calculate_factuality(rag_answer, kb_id, chat_model)
+                score += factuality_score * 0.3
+                
+                # 3. 完整性评分 (0-0.1)
+                completeness_score = calculate_completeness(rag_answer, eval_data.reference_answer)
+                score += completeness_score * 0.1
+                
+                # 4. 连贯性评分 (0-0.1)
+                coherence_score = calculate_coherence(rag_answer)
+                score += coherence_score * 0.1
+                
+                # 5. 相关性评分 (0-0.1)
+                relevance_score = calculate_relevance(rag_answer, eval_data.query)
+                score += relevance_score * 0.1
     
     # 确保分数在0-1之间
     score = min(1.0, max(0.0, score))
@@ -633,32 +696,55 @@ async def update_evaluation(
     score = 0.0
     
     if rag_answer:
-        # 检查是否存在明确的相反语义
-        has_opposite_meaning = await contains_opposite_meaning(rag_answer, eval_data.reference_answer, chat_model)
+        # 检查是否为未检索到相关内容的情况
+        no_retrieval_answer = any(phrase in rag_answer for phrase in ['未检索到', '未找到', '没有找到', '没有相关'])
+        no_retrieval_reference = any(phrase in eval_data.reference_answer for phrase in ['未检索到', '未找到', '没有找到', '没有相关'])
         
-        if has_opposite_meaning:
-            # 明确的相反语义，直接给予很低的分数
-            score = 0.2
+        # 特殊情况处理：双方都未检索到
+        if no_retrieval_answer and no_retrieval_reference:
+            # 双方都未检索到，给予很高的分数
+            score = 0.9
+        # 特殊情况处理：AI未检索到，但参考答案是明确的
+        elif no_retrieval_answer and not no_retrieval_reference:
+            # 检查参考答案是否是明确的肯定或否定
+            reference_lower = eval_data.reference_answer.lower()
+            has_explicit_answer = any(word in reference_lower for word in ['在', '有', '是', '写了', '没在', '没有', '不是', '没写'])
+            
+            if has_explicit_answer:
+                # AI未检索到，但参考答案明确，给予中等分数
+                # 因为AI的回答是基于知识库的，可能知识库确实没有相关信息
+                score = 0.4
+            else:
+                # 参考答案也不明确，给予较高分数
+                score = 0.7
         else:
-            # 1. 语义相似度评分 (0-0.4)
-            semantic_score = await calculate_semantic_similarity(rag_answer, eval_data.reference_answer, chat_model)
-            score += semantic_score * 0.4
+            # 常规评分逻辑
+            # 检查是否存在明确的相反语义
+            has_opposite_meaning = await contains_opposite_meaning(rag_answer, eval_data.reference_answer, chat_model)
             
-            # 2. 事实性评分 (0-0.3)
-            factuality_score = await calculate_factuality(rag_answer, kb_id, chat_model)
-            score += factuality_score * 0.3
-            
-            # 3. 完整性评分 (0-0.1)
-            completeness_score = calculate_completeness(rag_answer, eval_data.reference_answer)
-            score += completeness_score * 0.1
-            
-            # 4. 连贯性评分 (0-0.1)
-            coherence_score = calculate_coherence(rag_answer)
-            score += coherence_score * 0.1
-            
-            # 5. 相关性评分 (0-0.1)
-            relevance_score = calculate_relevance(rag_answer, eval_data.query)
-            score += relevance_score * 0.1
+            if has_opposite_meaning:
+                # 明确的相反语义，直接给予很低的分数
+                score = 0.2
+            else:
+                # 1. 语义相似度评分 (0-0.4)
+                semantic_score = await calculate_semantic_similarity(rag_answer, eval_data.reference_answer, chat_model)
+                score += semantic_score * 0.4
+                
+                # 2. 事实性评分 (0-0.3)
+                factuality_score = await calculate_factuality(rag_answer, kb_id, chat_model)
+                score += factuality_score * 0.3
+                
+                # 3. 完整性评分 (0-0.1)
+                completeness_score = calculate_completeness(rag_answer, eval_data.reference_answer)
+                score += completeness_score * 0.1
+                
+                # 4. 连贯性评分 (0-0.1)
+                coherence_score = calculate_coherence(rag_answer)
+                score += coherence_score * 0.1
+                
+                # 5. 相关性评分 (0-0.1)
+                relevance_score = calculate_relevance(rag_answer, eval_data.query)
+                score += relevance_score * 0.1
     
     # 确保分数在0-1之间
     score = min(1.0, max(0.0, score))

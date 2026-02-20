@@ -2,6 +2,7 @@
 SmartRAG 全流程编排器
 Query → Retrieval → Rerank → Generation → Output
 """
+import json
 from typing import List, Optional
 from loguru import logger
 
@@ -9,6 +10,8 @@ from backend.app.core.retriever import HybridRetriever, RetrievalResult
 from backend.app.core.reranker import Reranker
 from backend.app.core.generator import Generator, GenerationResult
 from backend.app.config import get_settings
+from backend.app.models.document import DocumentChunk, Document
+from sqlalchemy import select
 
 settings = get_settings()
 
@@ -33,6 +36,8 @@ class RAGPipeline:
         top_k: Optional[float] = None,
         top_p: Optional[float] = None,
         retrieval_mode: str = "hybrid",
+        use_llm: bool = True,
+        db = None,
     ) -> GenerationResult:
         """
         执行完整 RAG 流程
@@ -86,28 +91,65 @@ class RAGPipeline:
             filtered = reranked[:1]
 
         logger.info(f"[RAG] After filtering: {len(filtered)} chunks")
+        if use_llm:
+            # ── Stage 4: 生成 ──
+            logger.info("[RAG] Stage 4: Generation")
+            result = await self.generator.generate(
+                query=query,
+                retrieved_chunks=filtered,
+                conversation_history=conversation_history,
+                model=model,
+                model_id=model_id,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=temperature,
+                top_p=top_p,
+            )
 
-        # ── Stage 4: 生成 ──
-        logger.info("[RAG] Stage 4: Generation")
-        result = await self.generator.generate(
-            query=query,
-            retrieved_chunks=filtered,
-            conversation_history=conversation_history,
-            model=model,
-            model_id=model_id,
-            api_key=api_key,
-            base_url=base_url,
-            temperature=temperature,
-            top_p=top_p,
-        )
+            logger.info(
+                f"[RAG] Done - confidence={result.confidence}, "
+                f"citations={len(result.citations)}, "
+                f"time={result.response_time:.2f}s"
+            )
 
-        logger.info(
-            f"[RAG] Done - confidence={result.confidence}, "
-            f"citations={len(result.citations)}, "
-            f"time={result.response_time:.2f}s"
-        )
+            return result
+        else:
+            results = []
+            for result in filtered:
+                content = result.content.replace("\n", "")
+                filename = "unknown"
+                if db and result.chunk_id:
+                    try:
+                        # 从chunk表获取doc_id
+                        chunk_result = await db.execute(
+                            select(DocumentChunk.doc_id).where(DocumentChunk.id == result.chunk_id)
+                        )
+                        doc_id = chunk_result.scalar_one_or_none()
+                        if doc_id:
+                            # 从document表获取filename
+                            doc_result = await db.execute(
+                                select(Document.filename).where(Document.id == doc_id)
+                            )
+                            filename = doc_result.scalar_one_or_none() or "unknown"
+                    except Exception as e:
+                        logger.error(f"获取文件名失败: {str(e)}")
+                else:
+                    # 如果没有数据库连接，回退到从metadata获取
+                    filename = result.metadata.get("filename", "unknown")
+                result_dict = {
+                    "filename": filename,
+                    "content": content,
+                    "score": result.score,
+                }
+                results.append(json.dumps(result_dict, ensure_ascii=False, indent=None))
+            return GenerationResult(
+                answer="\n".join(results),
+                confidence=0.0,
+                citations=[],  # 保持原字段
+                response_time=0.0,
+                token_usage={}
+            )
 
-        return result
 
     async def run_stream(
         self,

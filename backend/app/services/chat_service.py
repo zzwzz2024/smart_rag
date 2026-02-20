@@ -142,7 +142,8 @@ async def chat(
         top_k=chat_model.top_k,
         top_p=chat_model.top_p,
         api_key=api_key,
-        base_url=base_url
+        base_url=base_url,
+        db=db
     )
 
     # 保存 AI 回复

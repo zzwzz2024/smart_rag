@@ -43,6 +43,12 @@
                   <span>知识库评估</span>
                 </router-link>
               </li>
+              <li :class="{ 'active': route.path === '/api-authorization' }">
+                <router-link to="/api-authorization" @click="handleMenuClick('/api-authorization', 'api_management', 'API接口管理')">
+                  <i class="icon">🔑</i>
+                  <span>API接口管理</span>
+                </router-link>
+              </li>
             </ul>
           </li>
           <!-- 静态菜单：模型管理 -->
@@ -73,6 +79,7 @@
               </li>
             </ul>
           </li>
+
           <!-- 动态菜单：系统设置 -->
           <template v-for="menu in menuStore.menus" :key="menu.id">
             <li v-if="!menu.children || menu.children.length === 0">
@@ -213,6 +220,7 @@ const currentViewTitle = computed(() => {
     'knowledge-base': '知识库管理',
     'documents': '文档管理',
     'evaluation': '知识库评估',
+    'api_management': 'API接口管理',
     'settings': '系统管理',
     'model-settings': '模型管理',
     'system': '系统管理'
@@ -235,7 +243,7 @@ const handleMenuClick = (path: string, view: string, title: string) => {
     openSubmenu.value = null
   }
   // 点击知识库相关菜单时，保持知识库子菜单打开
-  if (view === 'knowledge-base' || view === 'evaluation' || view === 'documents') {
+  if (view === 'knowledge-base' || view === 'evaluation' || view === 'documents' || view === 'api_management') {
     openSubmenu.value = 'knowledge'
   }
   // 点击模型相关菜单时，保持模型子菜单打开
@@ -370,6 +378,7 @@ onMounted(async () => {
       '/knowledge-base': '知识库',
       '/documents': '文档管理',
       '/evaluation': '知识库评估',
+      '/api-authorization': 'API接口管理',
       '/model-settings': '模型管理',
       '/system/users': '系统设置'
     }

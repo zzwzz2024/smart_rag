@@ -1,0 +1,1 @@
+INSERT INTO "users" ("id", "username", "email", "hashed_password", "is_active", "role", "role_id", "created_at", "updated_at") VALUES ('70b550f3-f81b-45cb-a92e-1dd8bb8292fc', 'root', 'zzwzz2025@gmail.com', '63a9f0ea7bb98050796b649e85481845', 't', 'user', '1', '2026-02-13 15:35:38.854422', '2026-02-19 18:57:45.71355');

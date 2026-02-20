@@ -48,6 +48,11 @@ const router = createRouter({
           name: 'ModelSettings',
           component: () => import('../views/ModelSettings.vue')
         },
+        {
+          path: 'api-authorization',
+          name: 'ApiAuthorization',
+          component: () => import('../views/ApiAuthorization.vue')
+        },
         // 系统设置一级菜单及其二级菜单
         {
           path: 'system',

@@ -1,0 +1,8 @@
+INSERT INTO "model_vendors" ("id", "name", "description", "created_at", "updated_at") VALUES ('openai', 'OpenAI', 'OpenAI是人工智能研究实验室，开发了GPT系列模型', '2026-02-13 22:46:56.064067+08', '2026-02-13 22:46:56.064067+08');
+INSERT INTO "model_vendors" ("id", "name", "description", "created_at", "updated_at") VALUES ('qwen', 'Qwen', 'Qwen是阿里云开发的开源大语言模型', '2026-02-13 22:46:56.064067+08', '2026-02-13 22:46:56.064067+08');
+INSERT INTO "model_vendors" ("id", "name", "description", "created_at", "updated_at") VALUES ('deepseek', 'DeepSeek', 'DeepSeek是深度求索开发的大语言模型', '2026-02-13 22:46:56.064067+08', '2026-02-13 22:46:56.064067+08');
+INSERT INTO "model_vendors" ("id", "name", "description", "created_at", "updated_at") VALUES ('ollama', 'Ollama', 'Ollama是一个本地运行大语言模型的工具', '2026-02-13 22:46:56.064067+08', '2026-02-13 22:46:56.064067+08');
+INSERT INTO "model_vendors" ("id", "name", "description", "created_at", "updated_at") VALUES ('anthropic', 'Anthropic', 'Anthropic开发了Claude系列模型', '2026-02-13 22:46:56.064067+08', '2026-02-13 22:46:56.064067+08');
+INSERT INTO "model_vendors" ("id", "name", "description", "created_at", "updated_at") VALUES ('google', 'Google', 'Google开发了Gemini系列模型', '2026-02-13 22:46:56.064067+08', '2026-02-13 22:46:56.064067+08');
+INSERT INTO "model_vendors" ("id", "name", "description", "created_at", "updated_at") VALUES ('microsoft', 'Microsoft', 'Microsoft开发了Phi系列模型', '2026-02-13 22:46:56.064067+08', '2026-02-13 22:46:56.064067+08');
+INSERT INTO "model_vendors" ("id", "name", "description", "created_at", "updated_at") VALUES ('meta', 'Meta', 'Meta开发了Llama系列开源模型', '2026-02-13 22:46:56.064067+08', '2026-02-13 22:46:56.064067+08');
