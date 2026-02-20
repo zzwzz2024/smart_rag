@@ -3,10 +3,11 @@ import type { Evaluation } from '../types'
 
 export const evaluationApi = {
   // 获取评估列表
-  getEvaluations() {
+  getEvaluations(params?: { kb_id?: string, query?: string }) {
     return request<Evaluation[]>({
       url: '/eval',
-      method: 'get'
+      method: 'get',
+      params
     })
   },
 
@@ -15,6 +16,7 @@ export const evaluationApi = {
     query: string
     reference_answer: string
     kb_ids: string[]
+    model_id: string
   }) {
     return request<Evaluation>({
       url: '/eval',
@@ -28,6 +30,20 @@ export const evaluationApi = {
     return request({
       url: `/eval/${evalId}`,
       method: 'delete'
+    })
+  },
+
+  // 更新评估（重新评估）
+  updateEvaluation(evalId: number, data: {
+    query: string
+    reference_answer: string
+    kb_ids: string[]
+    model_id: string
+  }) {
+    return request({
+      url: `/eval/${evalId}`,
+      method: 'put',
+      data
     })
   }
 }

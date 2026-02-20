@@ -15,6 +15,8 @@ class Evaluation(Base):
     reference_answer: Mapped[str] = mapped_column(Text, nullable=False)
     rag_answer: Mapped[str] = mapped_column(Text, nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False)
+    kb_id: Mapped[str] = mapped_column(String, nullable=False)
+    model_id: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )

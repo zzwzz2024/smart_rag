@@ -108,7 +108,7 @@ class Reranker:
             # 综合初始分数和重排分数
             combined = 0.3 * result.score + 0.7 * rerank_score
             result.score = combined
-            scored_results.backend.append(result)
+            scored_results.append(result)
 
         scored_results.sort(key=lambda x: x.score, reverse=True)
         return scored_results[:top_k]

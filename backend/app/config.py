@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # ---- 本地 Embedding (可选) ----
     USE_LOCAL_EMBEDDING: bool = False
-    LOCAL_EMBEDDING_MODEL: str = f"F:\model-file\pretrained\bge-base-zh-v1.5"
+    LOCAL_EMBEDDING_MODEL: str = f"F:\\model-file\\pretrained\\bge-base-zh-v1.5"
 
     class Config:
         env_file = ".env"

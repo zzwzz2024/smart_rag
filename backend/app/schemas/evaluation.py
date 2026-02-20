@@ -35,6 +35,7 @@ class EvalCreate(BaseModel):
     query: str
     reference_answer: str
     kb_ids: List[str] = []
+    model_id: str
 
 
 class EvalResponse(BaseModel):
@@ -44,6 +45,8 @@ class EvalResponse(BaseModel):
     reference_answer: str
     rag_answer: str
     score: float
+    kb_id: str
+    model_id: str
     created_at: datetime
 
     class Config:
