@@ -89,7 +89,7 @@ class VectorStore:
             f"Added {len(contents)} chunks to collection kb_{kb_id}"
         )
 
-    def search(
+    async def search(
         self,
         kb_id: str,
         query: str,
@@ -101,7 +101,7 @@ class VectorStore:
         if collection.count() == 0:
             return []
         logger.info(f"query_embedding开始")
-        query_embedding = self.embedder.embed_query(query)
+        query_embedding = await self.embedder.embed_query(query)
         logger.info(f"query_embedding完成")
 
         results = collection.query(

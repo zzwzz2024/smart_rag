@@ -30,7 +30,8 @@ class RAGPipeline:
         base_url:Optional[str] = None,
         model_id: Optional[str] = None,
         temperature: Optional[float] = None,
-        top_k: Optional[int] = None,
+        top_k: Optional[float] = None,
+        top_p: Optional[float] = None,
         retrieval_mode: str = "hybrid",
     ) -> GenerationResult:
         """
@@ -62,6 +63,7 @@ class RAGPipeline:
                 model=model,
                 model_id=model_id,
                 temperature=temperature,
+                top_p=top_p,
                 api_key=api_key,
                 base_url=base_url
             )
@@ -94,8 +96,9 @@ class RAGPipeline:
             model=model,
             model_id=model_id,
             api_key=api_key,
+            base_url=base_url,
             temperature=temperature,
-            base_url=base_url
+            top_p=top_p,
         )
 
         logger.info(

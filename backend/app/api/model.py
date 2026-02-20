@@ -440,7 +440,10 @@ async def list_models(
             "isActive": model.is_active,
             "isDefault": model.is_default,
             "createdAt": model.created_at,
-            "updatedAt": model.updated_at
+            "updatedAt": model.updated_at,
+            "topK": model.top_k,
+            "temperature": model.temperature,
+            "topP": model.top_p,
         }
         model_responses.append(ModelResponse(**model_dict))
 

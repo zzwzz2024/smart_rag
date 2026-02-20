@@ -14,6 +14,9 @@ class ModelBase(BaseModel):
     description: Optional[str] = Field(None, description="模型描述")
     is_active: bool = Field(True, description="模型状态", alias="isActive")
     is_default: bool = Field(False, description="是否为默认模型", alias="isDefault")
+    top_k: Optional[int] = Field(5, description="检索时返回的top_k个结果", alias="topK")
+    temperature: Optional[float] = Field(0.7, description="生成时的温度参数", alias="temperature")
+    top_p: Optional[float] = Field(0.9, description="生成时的top_p参数", alias="topP")
 
     class Config:
         populate_by_name = True
@@ -32,6 +35,9 @@ class ModelUpdate(BaseModel):
     description: Optional[str] = Field(None, description="模型描述")
     is_active: Optional[bool] = Field(None, description="模型状态", alias="isActive")
     is_default: Optional[bool] = Field(None, description="是否为默认模型", alias="isDefault")
+    top_k: Optional[int] = Field(None, description="检索时返回的top_k个结果", alias="topK")
+    temperature: Optional[float] = Field(None, description="生成时的温度参数", alias="temperature")
+    top_p: Optional[float] = Field(None, description="生成时的top_p参数", alias="topP")
 
     class Config:
         populate_by_name = True

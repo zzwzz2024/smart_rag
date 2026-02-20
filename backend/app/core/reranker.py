@@ -3,7 +3,7 @@ SmartRAG 重排序器
 支持: LLM-based Reranking / Cross-Encoder (本地)
 """
 from typing import List
-from openai import OpenAI
+from openai import AsyncOpenAI
 from loguru import logger
 from backend.app.core.retriever import RetrievalResult
 from backend.app.config import get_settings
@@ -17,13 +17,13 @@ class Reranker:
     def __init__(self,api_key=None,base_url=None,model_name=None, rerank_model=None):
         # 如果提供了rerank_model，使用它的配置
         if rerank_model:
-            self.client = OpenAI(
+            self.client = AsyncOpenAI(
                 api_key=rerank_model.api_key,
                 base_url=rerank_model.base_url,
                 timeout = 120.0
             )
         else:
-            self.client = OpenAI(
+            self.client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
                 timeout = 120.0
@@ -76,7 +76,7 @@ class Reranker:
 请严格按以下 JSON 格式输出（仅输出 JSON，无其他内容）:
 {{"scores": [score1, score2, ...]}}"""
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=settings.LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,

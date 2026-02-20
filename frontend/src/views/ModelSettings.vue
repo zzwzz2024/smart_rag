@@ -20,6 +20,24 @@
         </template>
       </el-table-column>
       <el-table-column prop="baseUrl" label="基础 URL" width="200" />
+      <!-- 只在聊天模型列表中显示参数列 -->
+      <template v-if="currentModelType === 'chat'">
+        <el-table-column label="Top K" width="100">
+          <template #default="scope">
+            {{ scope.row.topK || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="温度" width="100">
+          <template #default="scope">
+            {{ scope.row.temperature || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="Top P" width="100">
+          <template #default="scope">
+            {{ scope.row.topP || '-' }}
+          </template>
+        </el-table-column>
+      </template>
       <el-table-column label="状态" width="120">
         <template #default="scope">
           <el-switch
@@ -54,40 +72,83 @@
     <el-dialog
       v-model="dialogVisible"
       :title="dialogTitle"
-      width="500px"
+      width="800px"
     >
-      <el-form :model="modelForm" :rules="modelRules" ref="modelFormRef" label-width="100px">
-        <el-form-item label="模型标识" prop="name">
-          <el-input v-model="modelForm.name" placeholder="请输入模型标识" />
-        </el-form-item>
-        <el-form-item label="模型名称" prop="model">
-          <el-input v-model="modelForm.model" placeholder="请输入模型名称" />
-        </el-form-item>
-        <el-form-item label="模型厂商">
-          <el-select v-model="modelForm.vendorId" placeholder="请选择模型厂商" style="width: 100%">
-            <el-option
-              v-for="vendor in vendors"
-              :key="vendor.id"
-              :label="vendor.name"
-              :value="vendor.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="API Key" prop="apiKey">
-          <el-input v-model="modelForm.apiKey" placeholder="请输入 API Key" type="password" />
-        </el-form-item>
-        <el-form-item label="基础 URL" prop="baseUrl">
-          <el-input v-model="modelForm.baseUrl" placeholder="请输入基础 URL" />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="modelForm.description" placeholder="请输入模型描述" type="textarea" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-switch v-model="modelForm.isActive" active-text="" inactive-text="" />
-        </el-form-item>
-        <el-form-item label="默认">
-          <el-switch v-model="modelForm.isDefault" active-text="" inactive-text="" />
-        </el-form-item>
+      <el-form 
+        :model="modelForm" 
+        :rules="modelRules" 
+        ref="modelFormRef" 
+        label-width="80px"
+        :inline="false"
+        :label-position="'left'"
+      >
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="模型标识" prop="name">
+              <el-input v-model="modelForm.name" placeholder="请输入模型标识" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="模型名称" prop="model">
+              <el-input v-model="modelForm.model" placeholder="请输入模型名称" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="模型厂商">
+              <el-select v-model="modelForm.vendorId" placeholder="请选择模型厂商" style="width: 100%">
+                <el-option
+                  v-for="vendor in vendors"
+                  :key="vendor.id"
+                  :label="vendor.name"
+                  :value="vendor.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="API Key" prop="apiKey">
+              <el-input v-model="modelForm.apiKey" placeholder="请输入 API Key" type="password" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="基础 URL" prop="baseUrl">
+              <el-input v-model="modelForm.baseUrl" placeholder="请输入基础 URL" />
+            </el-form-item>
+          </el-col>
+          <!-- 只在聊天模型界面显示参数设置 -->
+          <template v-if="modelForm.type === 'chat'">
+            <el-col :span="12">
+              <el-form-item label="Top K">
+                <el-input-number v-model="modelForm.topK" :min="1" :max="50" :step="1" placeholder="请输入Top K值" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="温度">
+                <el-input-number v-model="modelForm.temperature" :min="0" :max="2" :step="0.1" placeholder="请输入温度值" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Top P">
+                <el-input-number v-model="modelForm.topP" :min="0" :max="1" :step="0.1" placeholder="请输入Top P值" />
+              </el-form-item>
+            </el-col>
+          </template>
+          <el-col :span="24">
+            <el-form-item label="描述">
+              <el-input v-model="modelForm.description" placeholder="请输入模型描述" type="textarea" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="状态">
+              <el-switch v-model="modelForm.isActive" active-text="" inactive-text="" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="默认">
+              <el-switch v-model="modelForm.isDefault" active-text="" inactive-text="" />
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
@@ -119,6 +180,9 @@ interface Model extends ModelResponse {
   vendorName?: string
   isActive?: boolean
   isDefault?: boolean
+  topK?: number
+  temperature?: number
+  topP?: number
   createdAt?: string
   updatedAt?: string
 }
@@ -146,7 +210,10 @@ const modelForm = ref<Partial<Model>>({
   baseUrl: '',
   description: '',
   isActive: true,
-  isDefault: false
+  isDefault: false,
+  topK: 5,
+  temperature: 0.7,
+  topP: 0.9
 })
 const modelFormRef = ref()
 const models = ref<Model[]>([])
@@ -275,6 +342,13 @@ const createModel = async () => {
       isDefault: modelForm.value.isDefault === true
     }
     
+    // 只在聊天模型中添加参数设置
+    if (modelForm.value.type === 'chat') {
+      modelData.topK = modelForm.value.topK || 5
+      modelData.temperature = modelForm.value.temperature || 0.7
+      modelData.topP = modelForm.value.topP || 0.9
+    }
+    
     const response = await modelApi.createModel(modelData)
     models.value.push(response)
     ElMessage.success('模型添加成功')
@@ -301,6 +375,13 @@ const updateModel = async () => {
       description: modelForm.value.description,
       isActive: modelForm.value.isActive,
       isDefault: modelForm.value.isDefault
+    }
+    
+    // 只在聊天模型中添加参数设置
+    if (modelForm.value.type === 'chat') {
+      modelData.topK = modelForm.value.topK
+      modelData.temperature = modelForm.value.temperature
+      modelData.topP = modelForm.value.topP
     }
     
     const response = await modelApi.updateModel(modelForm.value.id, modelData)

@@ -10,12 +10,14 @@
       </div>
       <nav class="sidebar-nav">
         <ul>
+          <!-- 静态菜单：聊天 -->
           <li>
             <router-link to="/chat" @click="handleMenuClick('/chat', 'chat', '聊天')">
               <i class="icon">💬</i>
               <span>聊天</span>
             </router-link>
           </li>
+          <!-- 静态菜单：知识库 -->
           <li class="has-submenu" :class="{ 'open': openSubmenu === 'knowledge' }">
             <div class="submenu-title" @click="toggleSubmenu('knowledge')">
               <i class="icon">📚</i>
@@ -43,6 +45,7 @@
               </li>
             </ul>
           </li>
+          <!-- 静态菜单：模型管理 -->
           <li class="has-submenu" :class="{ 'open': openSubmenu === 'model' }">
             <div class="submenu-title" @click="toggleSubmenu('model')">
               <i class="icon">🤖</i>
@@ -70,45 +73,30 @@
               </li>
             </ul>
           </li>
-          <li class="has-submenu" :class="{ 'open': openSubmenu === 'system' }">
-            <div class="submenu-title" @click="toggleSubmenu('system')">
-              <i class="icon">🛠️</i>
-              <span>系统设置</span>
-              <i class="submenu-arrow">{{ openSubmenu === 'system' ? '▼' : '▶' }}</i>
-            </div>
-            <ul class="submenu">
-              <li :class="{ 'active': route.path === '/system/users' }">
-                <router-link to="/system/users" @click="handleMenuClick('/system/users', 'system', '用户管理')">
-                  <i class="icon">👤</i>
-                  <span>用户管理</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': route.path === '/system/roles' }">
-                <router-link to="/system/roles" @click="handleMenuClick('/system/roles', 'system', '角色管理')">
-                  <i class="icon">🎭</i>
-                  <span>角色管理</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': route.path === '/system/menus' }">
-                <router-link to="/system/menus" @click="handleMenuClick('/system/menus', 'system', '菜单管理')">
-                  <i class="icon">📋</i>
-                  <span>菜单管理</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': route.path === '/system/permissions' }">
-                <router-link to="/system/permissions" @click="handleMenuClick('/system/permissions', 'system', '权限设置')">
-                  <i class="icon">🔒</i>
-                  <span>权限设置</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': route.path === '/system/dictionaries' }">
-                <router-link to="/system/dictionaries" @click="handleMenuClick('/system/dictionaries', 'system', '字典管理')">
-                  <i class="icon">📖</i>
-                  <span>字典管理</span>
-                </router-link>
-              </li>
-            </ul>
-          </li>
+          <!-- 动态菜单：系统设置 -->
+          <template v-for="menu in menuStore.menus" :key="menu.id">
+            <li v-if="!menu.children || menu.children.length === 0">
+              <router-link :to="menu.path" @click="handleMenuClick(menu.path, menu.code, menu.name)">
+                <i class="icon">{{ menu.icon || '📋' }}</i>
+                <span>{{ menu.name }}</span>
+              </router-link>
+            </li>
+            <li v-else class="has-submenu" :class="{ 'open': openSubmenu === menu.code }">
+              <div class="submenu-title" @click="toggleSubmenu(menu.code)">
+                <i class="icon">{{ menu.icon || '📋' }}</i>
+                <span>{{ menu.name }}</span>
+                <i class="submenu-arrow">{{ openSubmenu === menu.code ? '▼' : '▶' }}</i>
+              </div>
+              <ul class="submenu">
+                <li v-for="childMenu in menu.children" :key="childMenu.id" :class="{ 'active': route.path === childMenu.path }">
+                  <router-link :to="childMenu.path" @click="handleMenuClick(childMenu.path, childMenu.code, childMenu.name)">
+                    <i class="icon">{{ childMenu.icon || '📋' }}</i>
+                    <span>{{ childMenu.name }}</span>
+                  </router-link>
+                </li>
+              </ul>
+            </li>
+          </template>
         </ul>
       </nav>
       <div class="sidebar-footer">
@@ -196,12 +184,14 @@ import { computed, onMounted, ref, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useUserStore } from '../stores/user'
+import { useMenuStore } from '../stores/menu'
 import { useTabsStore } from '../stores/tabs'
 
 const router = useRouter()
 const route = useRoute()
 const appStore = useAppStore()
 const userStore = useUserStore()
+const menuStore = useMenuStore()
 const tabsStore = useTabsStore()
 
 // 右键菜单状态
@@ -253,7 +243,7 @@ const handleMenuClick = (path: string, view: string, title: string) => {
     openSubmenu.value = 'model'
   }
   // 点击系统设置相关菜单时，保持系统设置子菜单打开
-  if (view === 'system') {
+  if (view === 'system' || view.startsWith('system_')) {
     openSubmenu.value = 'system'
   }
   appStore.setCurrentView(view)

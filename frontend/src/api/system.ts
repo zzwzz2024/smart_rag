@@ -140,6 +140,11 @@ export const menuApi = {
   // 删除菜单
   deleteMenu: (menuId: string) => {
     return api.delete(`/menus/${menuId}`)
+  },
+  
+  // 获取用户菜单权限
+  getUserMenus: () => {
+    return api.get('/user/menus')
   }
 }
 

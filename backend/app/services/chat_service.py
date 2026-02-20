@@ -69,6 +69,7 @@ async def chat(
     base_url = ""
     embedding_model = None
     rerank_model = None
+    chat_model = None
     
     if request.model_id:
         try:
@@ -80,6 +81,7 @@ async def chat(
                 model_name = model.model
                 api_key = model.api_key
                 base_url = model.base_url
+                chat_model = model
         except Exception as e:
             logger.error(f"Failed to fetch model: {e}")
     
@@ -136,8 +138,9 @@ async def chat(
         kb_ids=request.kb_ids,
         conversation_history=history,
         model=model_name,
-        temperature=request.temperature,
-        top_k=request.top_k,
+        temperature=chat_model.temperature,
+        top_k=chat_model.top_k,
+        top_p=chat_model.top_p,
         api_key=api_key,
         base_url=base_url
     )

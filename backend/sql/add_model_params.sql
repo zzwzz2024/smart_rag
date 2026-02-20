@@ -1,0 +1,8 @@
+-- 添加模型参数字段到 models 表
+ALTER TABLE models
+ADD COLUMN top_k INTEGER DEFAULT 5,
+ADD COLUMN temperature FLOAT DEFAULT 0.7,
+ADD COLUMN top_p FLOAT DEFAULT 0.9;
+
+-- 提交更改
+COMMIT;

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, Integer, Float
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from enum import Enum
@@ -37,6 +37,10 @@ class Model(Base):
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False, index=True)  # 模型状态
     is_default = Column(Boolean, default=False, nullable=False, index=True)  # 是否为默认模型
+    # 模型参数
+    top_k = Column(Integer, nullable=True, default=5)  # 检索时返回的top_k个结果
+    temperature = Column(Float, nullable=True, default=0.7)  # 生成时的温度参数
+    top_p = Column(Float, nullable=True, default=0.9)  # 生成时的top_p参数
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -450,3 +450,14 @@ async def delete_dictionary_item(
     if not deleted:
         raise HTTPException(status_code=404, detail="字典项不存在")
     return Response(data={"message": "字典项删除成功"})
+
+
+# 7. 用户菜单权限API
+@router.get("/user/menus", response_model=Response)
+async def get_user_menus(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取当前用户的菜单权限"""
+    menus = await SystemService.get_user_menu_permissions(db, current_user.id)
+    return Response(data=menus)

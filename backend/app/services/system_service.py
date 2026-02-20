@@ -386,3 +386,94 @@ class SystemService:
         await db.delete(db_item)
         await db.commit()
         return True
+
+    # 6. 用户菜单权限相关服务
+    @staticmethod
+    async def get_user_menu_permissions(db: AsyncSession, user_id: str) -> List[dict]:
+        """获取用户的菜单权限"""
+        from backend.app.models import User
+        
+        # 获取用户信息
+        user_result = await db.execute(
+            select(User).where(User.id == user_id)
+        )
+        user = user_result.scalars().first()
+        
+        if not user:
+            return []
+        
+        # 获取用户角色
+        if not user.role_id:
+            return []
+        
+        # 获取角色
+        role_result = await db.execute(
+            select(Role).where(Role.id == user.role_id)
+        )
+        role = role_result.scalars().first()
+        
+        if not role:
+            return []
+        
+        # 获取角色的权限
+        permission_result = await db.execute(
+            select(Permission).where(
+                Permission.id.in_(
+                    select(RolePermission.permission_id).where(
+                        RolePermission.role_id == role.id
+                    )
+                )
+            ).options(
+                joinedload(Permission.menu)
+            )
+        )
+        permissions = permission_result.scalars().all()
+        
+        # 获取有权限的菜单ID
+        menu_ids = set()
+        for permission in permissions:
+            if permission.menu_id:
+                menu_ids.add(permission.menu_id)
+        
+        if not menu_ids:
+            return []
+        
+        # 获取所有菜单
+        all_menus_result = await db.execute(
+            select(Menu).order_by(Menu.sort)
+        )
+        all_menus = all_menus_result.scalars().all()
+        
+        # 构建菜单字典
+        menu_dict = {}
+        # 静态菜单名称列表，用于过滤重复菜单
+        static_menu_names = ["聊天", "知识库", "模型管理"]
+        
+        for menu in all_menus:
+            # 只包含用户有权限的菜单及其父菜单，并且过滤掉与静态菜单重复的菜单项
+            if menu.id in menu_ids and menu.name not in static_menu_names:
+                menu_data = {
+                    "id": menu.id,
+                    "name": menu.name,
+                    "code": menu.code,
+                    "path": menu.path,
+                    "icon": menu.icon,
+                    "parent_id": menu.parent_id,
+                    "sort": menu.sort,
+                    "is_active": menu.is_active,
+                    "created_at": menu.created_at,
+                    "updated_at": menu.updated_at,
+                    "children": []
+                }
+                menu_dict[menu.id] = menu_data
+        
+        # 构建菜单树
+        root_menus = []
+        for menu_id, menu_data in menu_dict.items():
+            if menu_data["parent_id"] is None:
+                root_menus.append(menu_data)
+            elif menu_data["parent_id"] in menu_dict:
+                parent = menu_dict[menu_data["parent_id"]]
+                parent["children"].append(menu_data)
+        
+        return root_menus

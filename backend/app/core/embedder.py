@@ -5,7 +5,7 @@ SmartRAG Embedding 服务
 import numpy as np
 from typing import List
 from loguru import logger
-from openai import OpenAI
+from openai import AsyncOpenAI
 from backend.app.config import get_settings
 settings = get_settings()
 
@@ -37,16 +37,16 @@ class EmbeddingService:
 
     def _init_openai_client(self,api_key=None,base_url=None,model_name=None):
         """初始化 OpenAI Embedding 客户端"""
-        # from openai import OpenAI
+        # from openai import AsyncOpenAI
         logger.info(f"_init_openai_client")
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout = 120.0
         )
         self.model = model_name
         self.is_local = False
-        logger.info(f"Embedding service initialized (OpenAI: {self.model})")
+        logger.info(f"Embedding service initialized (AsyncOpenAI: {self.model})")
 
     def _init_local_model(self):
         """初始化本地 Embedding 模型"""
@@ -57,7 +57,7 @@ class EmbeddingService:
             f"Embedding service initialized (Local: {settings.LOCAL_EMBEDDING_MODEL})"
         )
 
-    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+    async def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """批量生成向量"""
         if not texts:
             return []
@@ -68,14 +68,14 @@ class EmbeddingService:
         if self.is_local:
             return self._embed_local(texts)
         else:
-            return self._embed_openai(texts)
+            return await self._embed_openai(texts)
 
-    def embed_query(self, query: str) -> List[float]:
+    async def embed_query(self, query: str) -> List[float]:
         """查询向量化"""
-        result = self.embed_texts([query])
+        result = await self.embed_texts([query])
         return result[0] if result else []
 
-    def _embed_openai(self, texts: List[str]) -> List[List[float]]:
+    async def _embed_openai(self, texts: List[str]) -> List[List[float]]:
         """使用 OpenAI API"""
         logger.info(f"_embed_openai开始")
         all_embeddings = []
@@ -83,7 +83,7 @@ class EmbeddingService:
 
         for i in range(0, len(texts), batch_size):
             batch = texts[i: i + batch_size]
-            response = self.client.embeddings.create(
+            response = await self.client.embeddings.create(
                 model=self.model,
                 input=batch,
             )

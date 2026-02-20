@@ -60,11 +60,11 @@ class HybridRetriever:
 
         for kb_id in kb_ids:
             if mode == "vector":
-                results = self._vector_search(processed_query, kb_id, top_k)
+                results = await self._vector_search(processed_query, kb_id, top_k)
             elif mode == "keyword":
                 results = self._keyword_search(processed_query, kb_id, top_k)
             else:
-                results = self._hybrid_search(
+                results = await self._hybrid_search(
                     processed_query, kb_id, top_k, vector_weight, keyword_weight
                 )
             all_results.extend(results)
@@ -88,12 +88,12 @@ class HybridRetriever:
         query = re.sub(r'\s+', ' ', query)
         return query
 
-    def _vector_search(
+    async def _vector_search(
         self, query: str, kb_id: str, top_k: int
     ) -> List[RetrievalResult]:
         """向量语义检索"""
         logger.info("_vector_search开始")
-        results = self.vector_store.search(kb_id, query, top_k=top_k)
+        results = await self.vector_store.search(kb_id, query, top_k=top_k)
         logger.info("_vector_search完成")
         return [
             RetrievalResult(
@@ -156,7 +156,7 @@ class HybridRetriever:
 
         return results
 
-    def _hybrid_search(
+    async def _hybrid_search(
         self,
         query: str,
         kb_id: str,
@@ -166,7 +166,7 @@ class HybridRetriever:
     ) -> List[RetrievalResult]:
         """混合检索 + RRF 融合"""
         # 两路召回
-        vector_results = self._vector_search(query, kb_id, top_k)
+        vector_results = await self._vector_search(query, kb_id, top_k)
         logger.info("vector_results向量检索完成")
         keyword_results = self._keyword_search(query, kb_id, top_k)
         logger.info("keywords检索完成")

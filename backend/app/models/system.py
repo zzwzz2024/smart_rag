@@ -47,21 +47,18 @@ class Menu(Base):
     permissions: Mapped[List["Permission"]] = relationship(
         "Permission",
         back_populates="menu",
-        cascade="all, delete-orphan",
-        lazy="selectin"
+        cascade="all, delete-orphan"
     )
     children: Mapped[List["Menu"]] = relationship(
         "Menu",
         back_populates="parent",
         cascade="all",
-        lazy="selectin",
         passive_deletes=True
     )
     parent: Mapped[Optional["Menu"]] = relationship(
         "Menu",
         back_populates="children",
-        remote_side=[id],
-        lazy="selectin"
+        remote_side=[id]
     )
 
 

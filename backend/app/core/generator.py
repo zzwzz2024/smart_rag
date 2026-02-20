@@ -5,7 +5,7 @@ SmartRAG 内容生成器
 import time
 from typing import List, Optional, Dict, AsyncGenerator
 from dataclasses import dataclass
-from openai import OpenAI
+from openai import AsyncOpenAI
 from loguru import logger
 
 from backend.app.core.retriever import RetrievalResult
@@ -29,14 +29,14 @@ class Generator:
     def __init__(self,api_key=None,base_url=None,model_name=None):
         self.clients = {}  # 存储不同模型的客户端
         print(f"Generator函数初始化")
-        self.default_client = OpenAI(
+        self.default_client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=120.0
         )
         print(f"Generator函数初始化完成")
 
-    def _get_or_create_client(self, model_id: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None, base_url: Optional[str] = None) -> OpenAI:
+    def _get_or_create_client(self, model_id: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None, base_url: Optional[str] = None) -> AsyncOpenAI:
         """
         获取或创建对应模型的客户端
         """
@@ -52,7 +52,7 @@ class Generator:
                 raise ValueError("Base URL is required for model client creation")
             # 这里可以根据model_id从数据库获取模型配置
             # 例如，获取模型的base_url等
-            self.clients[client_key] = OpenAI(
+            self.clients[client_key] = AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
             )
@@ -103,6 +103,7 @@ class Generator:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
     ) -> GenerationResult:
         """
         生成答案
@@ -123,10 +124,11 @@ class Generator:
             # 获取或创建对应模型的客户端
             client = self._get_or_create_client(model_id, model, api_key, base_url)
             
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages= self._build_messages(query, context, conversation_history or []),
                 temperature=temperature,
+                top_p=top_p,
                 max_tokens=settings.LLM_MAX_TOKENS,
             )
 
@@ -224,7 +226,7 @@ class Generator:
             # 获取或创建对应模型的客户端
             client = self._get_or_create_client(model_id, model, api_key)
             
-            stream = client.chat.completions.create(
+            stream = await client.chat.completions.create(
                 model=model,
                 messages=messages,
                 temperature=temperature,
