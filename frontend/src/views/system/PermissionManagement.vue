@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check } from '@element-plus/icons-vue'
 import { roleApi, permissionApi, menuApi } from '../../api/system'
@@ -159,47 +159,65 @@ const buildPermissionTree = () => {
       return
     }
 
+    // 为了快速查找菜单节点，创建一个菜单ID到节点的映射
+    const menuNodeMap: Record<string, any> = {}
+    const buildMenuNodeMap = (nodes: any[]) => {
+      nodes.forEach(node => {
+        menuNodeMap[node.id] = node
+        if (node.children && node.children.length > 0) {
+          buildMenuNodeMap(node.children)
+        }
+      })
+    }
+    buildMenuNodeMap(menuTree)
+
     // 将权限添加到对应的菜单节点下
     permissions.value.forEach(permission => {
-      if (permission && permission.menu_id) {
-        // 查找对应的菜单节点
-        const findMenuNode = (nodes: any[]): any => {
-          if (!Array.isArray(nodes)) return null
-          
-          for (const node of nodes) {
-            if (node && node.id === permission.menu_id) {
-              return node
-            }
-            if (node && node.children && Array.isArray(node.children) && node.children.length > 0) {
-              const found = findMenuNode(node.children)
-              if (found) {
-                return found
-              }
-            }
+      if (permission) {
+        if (permission.menu_id && menuNodeMap[permission.menu_id]) {
+          // 如果存在对应的菜单节点，添加到菜单的子节点
+          const menuNode = menuNodeMap[permission.menu_id]
+          if (!menuNode.children) {
+            menuNode.children = []
           }
-          return null
-        }
-
-        const menuNode = findMenuNode(menuTree)
-        if (menuNode && menuNode.children && Array.isArray(menuNode.children)) {
-          // 添加权限作为菜单的子节点
-          menuNode.children.push({
-            id: permission.id,
+          // 为权限节点添加前缀，避免ID冲突
+          const permissionNode = {
+            id: `perm_${permission.id}`,
             label: permission.name,
-            isMenu: false
-          })
+            isMenu: false,
+            originalId: permission.id
+          }
+          menuNode.children.push(permissionNode)
+          console.log(`Added permission node: perm_${permission.id} - ${permissionNode.label} to menu: ${menuNode.id} - ${menuNode.label}`)
+        } else {
+          // 如果没有menu_id或者对应的菜单节点不存在，直接添加到根节点
+          const permissionNode = {
+            id: `perm_${permission.id}`,
+            label: permission.name,
+            isMenu: false,
+            originalId: permission.id
+          }
+          menuTree.push(permissionNode)
+          console.log(`Added permission node to root: perm_${permission.id} - ${permissionNode.label}`)
         }
-      } else if (permission) {
-        // 如果没有menu_id，直接添加到根节点
-        menuTree.push({
-          id: permission.id,
-          label: permission.name,
-          isMenu: false
-        })
       }
     })
 
-    permissionTree.value = menuTree
+    // 打印权限树的详细结构
+    const printTreeStructure = (nodes: any[], level: number = 0) => {
+      nodes.forEach(node => {
+        const indent = '  '.repeat(level)
+        console.log(`${indent}- ${node.id}: ${node.label} (isMenu: ${node.isMenu})`)
+        if (node.children && node.children.length > 0) {
+          printTreeStructure(node.children, level + 1)
+        }
+      })
+    }
+    console.log('Permission tree structure:')
+    printTreeStructure(menuTree)
+
+    // 替换权限树内容
+    permissionTree.value = [...menuTree]
   } catch (error) {
     console.error('构建权限树失败:', error)
     permissionTree.value = []
@@ -217,12 +235,12 @@ const handleRoleChange = async () => {
       // 调用API获取角色详情，包括权限信息
       const roleWithPermissions = await roleApi.getRoleById(roleForm.value.roleId)
       
-      // 更新选中的权限
-      const permissionIds = roleWithPermissions.permissions?.map(p => p.id) || []
+      // 更新选中的权限，为权限ID添加前缀
+      const permissionIds = roleWithPermissions.permissions?.map(p => `perm_${p.id}`) || []
       selectedPermissions.value = permissionIds
       
-      // 更新权限树的选中状态
-      if (permissionTreeRef.value) {
+      // 直接设置选中状态，如果权限树已经构建完成
+      if (permissionTreeRef.value && permissionTree.value.length > 0) {
         permissionTreeRef.value.setCheckedKeys(permissionIds)
       }
     } catch (error) {
@@ -310,13 +328,44 @@ const savePermissions = async () => {
   if (!currentRole.value) return
   
   try {
-    await roleApi.assignPermissions(currentRole.value.id, selectedPermissions.value)
+    // 移除权限ID的前缀，转换为原始ID
+    const originalPermissionIds = selectedPermissions.value.map(id => {
+      if (id.startsWith('perm_')) {
+        return id.replace('perm_', '')
+      }
+      return id
+    })
+    
+    await roleApi.assignPermissions(currentRole.value.id, originalPermissionIds)
     ElMessage.success('权限保存成功')
   } catch (error) {
     console.error('保存权限失败:', error)
     ElMessage.error('保存权限失败')
   }
 }
+
+// 监听权限树变化，重新设置选中状态
+watch(permissionTree, () => {
+  if (permissionTreeRef.value && selectedPermissions.value.length > 0) {
+    // 增加延迟时间，确保权限树完全渲染完成
+    setTimeout(() => {
+      console.log('Setting checked keys:', selectedPermissions.value)
+      console.log('Permission tree nodes:', permissionTree.value)
+      permissionTreeRef.value.setCheckedKeys(selectedPermissions.value)
+    }, 300)
+  }
+}, { deep: true })
+
+// 监听 currentRole 变化，当角色变化时重新设置选中状态
+watch(currentRole, () => {
+  if (currentRole.value && permissionTreeRef.value && selectedPermissions.value.length > 0) {
+    // 增加延迟时间，确保 el-tree 组件完全渲染完成
+    setTimeout(() => {
+      console.log('Current role changed, setting checked keys:', selectedPermissions.value)
+      permissionTreeRef.value.setCheckedKeys(selectedPermissions.value)
+    }, 500)
+  }
+})
 
 // 初始化
 onMounted(async () => {
