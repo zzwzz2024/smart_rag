@@ -17,6 +17,13 @@ from backend.app.schemas.api_authorization import (
 )
 from backend.app.services.api_authorization_service import ApiAuthorizationService
 from backend.app.utils.auth import get_current_user
+from backend.app.utils.api_authorization_utils import (
+    get_knowledge_bases_by_ids,
+    get_knowledge_bases_map_by_authorization_ids,
+    get_knowledge_bases_by_authorization_id,
+    build_authorization_response,
+    build_knowledge_bases_info
+)
 from backend.app.models.response_model import Response
 
 
@@ -36,41 +43,18 @@ async def create_authorization(
         )
         
         # 单独查询知识库信息，避免延迟加载
-        knowledge_base_ids = []
-        knowledge_base_names = []
-        if authorization_data.knowledge_base_ids:
-            from sqlalchemy import select
-            from backend.app.models.knowledge_base import KnowledgeBase
-            
-            result = await db.execute(
-                select(KnowledgeBase).where(
-                    KnowledgeBase.id.in_(authorization_data.knowledge_base_ids)
-                )
-            )
-            knowledge_bases = result.scalars().all()
-            knowledge_base_ids = [kb.id for kb in knowledge_bases]
-            knowledge_base_names = [kb.name for kb in knowledge_bases]
+        knowledge_base_ids, knowledge_base_names = await get_knowledge_bases_by_ids(
+            db, authorization_data.knowledge_base_ids
+        )
         
         # 构建响应数据
-        response_data = ApiAuthorizationResponse(
-            id=authorization.id,
-            vendor_name=authorization.vendor_name,
-            vendor_contact=authorization.vendor_contact,
-            contact_phone=authorization.contact_phone,
-            authorized_ips=authorization.authorized_ips,
-            auth_code=authorization.auth_code,
-            start_time=authorization.start_time,
-            end_time=authorization.end_time,
-            is_active=authorization.is_active,
-            created_at=authorization.created_at,
-            updated_at=authorization.updated_at,
-            knowledge_base_ids=knowledge_base_ids,
-            knowledge_base_names=knowledge_base_names
+        response_data = build_authorization_response(
+            authorization, knowledge_base_ids, knowledge_base_names
         )
         
         return Response(data=response_data)
     except Exception as e:
-        print(f"创建授权失败: {str(e)}")  # 打印详细错误以便调试
+        logger.error(f"创建授权失败: {str(e)}")
         raise HTTPException(status_code=400, detail="创建授权失败，请检查输入信息")
 
 
@@ -87,62 +71,23 @@ async def get_authorizations(
             db, skip=skip, limit=limit
         )
         
-        # 单独查询所有授权的知识库关联
-        from sqlalchemy import select, join
-        from backend.app.models.knowledge_base import KnowledgeBase
-        
-        # 获取所有授权ID
+        # 批量查询所有授权的知识库关联
         authorization_ids = [auth.id for auth in authorizations]
-        
-        # 批量查询知识库关联
-        knowledge_base_map = {}
-        if authorization_ids:
-            result = await db.execute(
-                select(
-                    knowledge_base_authorization_association.c.authorization_id,
-                    KnowledgeBase.id,
-                    KnowledgeBase.name
-                ).select_from(
-                    join(
-                        knowledge_base_authorization_association,
-                        KnowledgeBase,
-                        knowledge_base_authorization_association.c.knowledge_base_id == KnowledgeBase.id
-                    )
-                ).where(
-                    knowledge_base_authorization_association.c.authorization_id.in_(authorization_ids)
-                )
-            )
-            
-            # 构建映射
-            for auth_id, kb_id, kb_name in result.all():
-                if auth_id not in knowledge_base_map:
-                    knowledge_base_map[auth_id] = {"ids": [], "names": []}
-                knowledge_base_map[auth_id]["ids"].append(kb_id)
-                knowledge_base_map[auth_id]["names"].append(kb_name)
+        knowledge_base_map = await get_knowledge_bases_map_by_authorization_ids(
+            db, authorization_ids
+        )
         
         # 构建响应数据
         response_data = []
         for authorization in authorizations:
             kb_info = knowledge_base_map.get(authorization.id, {"ids": [], "names": []})
-            response_data.append(ApiAuthorizationResponse(
-                id=authorization.id,
-                vendor_name=authorization.vendor_name,
-                vendor_contact=authorization.vendor_contact,
-                contact_phone=authorization.contact_phone,
-                authorized_ips=authorization.authorized_ips,
-                auth_code=authorization.auth_code,
-                start_time=authorization.start_time,
-                end_time=authorization.end_time,
-                is_active=authorization.is_active,
-                created_at=authorization.created_at,
-                updated_at=authorization.updated_at,
-                knowledge_base_ids=kb_info["ids"],
-                knowledge_base_names=kb_info["names"]
+            response_data.append(build_authorization_response(
+                authorization, kb_info["ids"], kb_info["names"]
             ))
         
         return Response(data=response_data)
     except Exception as e:
-        print(f"获取授权列表失败: {str(e)}")
+        logger.error(f"获取授权列表失败: {str(e)}")
         raise HTTPException(status_code=400, detail="获取授权列表失败")
 
 
@@ -161,52 +106,20 @@ async def get_authorization(
             raise HTTPException(status_code=404, detail="授权不存在")
         
         # 单独查询知识库信息
-        from sqlalchemy import select, join
-        from backend.app.models.knowledge_base import KnowledgeBase
-        
-        result = await db.execute(
-            select(
-                KnowledgeBase.id,
-                KnowledgeBase.name
-            ).select_from(
-                join(
-                    knowledge_base_authorization_association,
-                    KnowledgeBase,
-                    knowledge_base_authorization_association.c.knowledge_base_id == KnowledgeBase.id
-                )
-            ).where(
-                knowledge_base_authorization_association.c.authorization_id == authorization_id
-            )
+        knowledge_base_ids, knowledge_base_names = await get_knowledge_bases_by_authorization_id(
+            db, authorization_id
         )
         
-        knowledge_base_ids = []
-        knowledge_base_names = []
-        for kb_id, kb_name in result.all():
-            knowledge_base_ids.append(kb_id)
-            knowledge_base_names.append(kb_name)
-        
         # 构建响应数据
-        response_data = ApiAuthorizationResponse(
-            id=authorization.id,
-            vendor_name=authorization.vendor_name,
-            vendor_contact=authorization.vendor_contact,
-            contact_phone=authorization.contact_phone,
-            authorized_ips=authorization.authorized_ips,
-            auth_code=authorization.auth_code,
-            start_time=authorization.start_time,
-            end_time=authorization.end_time,
-            is_active=authorization.is_active,
-            created_at=authorization.created_at,
-            updated_at=authorization.updated_at,
-            knowledge_base_ids=knowledge_base_ids,
-            knowledge_base_names=knowledge_base_names
+        response_data = build_authorization_response(
+            authorization, knowledge_base_ids, knowledge_base_names
         )
         
         return Response(data=response_data)
     except HTTPException:
         raise
     except Exception as e:
-        print(f"获取授权详情失败: {str(e)}")
+        logger.error(f"获取授权详情失败: {str(e)}")
         raise HTTPException(status_code=400, detail="获取授权详情失败")
 
 
@@ -226,52 +139,20 @@ async def update_authorization(
             raise HTTPException(status_code=404, detail="授权不存在")
         
         # 单独查询知识库信息
-        from sqlalchemy import select, join
-        from backend.app.models.knowledge_base import KnowledgeBase
-        
-        result = await db.execute(
-            select(
-                KnowledgeBase.id,
-                KnowledgeBase.name
-            ).select_from(
-                join(
-                    knowledge_base_authorization_association,
-                    KnowledgeBase,
-                    knowledge_base_authorization_association.c.knowledge_base_id == KnowledgeBase.id
-                )
-            ).where(
-                knowledge_base_authorization_association.c.authorization_id == authorization_id
-            )
+        knowledge_base_ids, knowledge_base_names = await get_knowledge_bases_by_authorization_id(
+            db, authorization_id
         )
         
-        knowledge_base_ids = []
-        knowledge_base_names = []
-        for kb_id, kb_name in result.all():
-            knowledge_base_ids.append(kb_id)
-            knowledge_base_names.append(kb_name)
-        
         # 构建响应数据
-        response_data = ApiAuthorizationResponse(
-            id=authorization.id,
-            vendor_name=authorization.vendor_name,
-            vendor_contact=authorization.vendor_contact,
-            contact_phone=authorization.contact_phone,
-            authorized_ips=authorization.authorized_ips,
-            auth_code=authorization.auth_code,
-            start_time=authorization.start_time,
-            end_time=authorization.end_time,
-            is_active=authorization.is_active,
-            created_at=authorization.created_at,
-            updated_at=authorization.updated_at,
-            knowledge_base_ids=knowledge_base_ids,
-            knowledge_base_names=knowledge_base_names
+        response_data = build_authorization_response(
+            authorization, knowledge_base_ids, knowledge_base_names
         )
         
         return Response(data=response_data)
     except HTTPException:
         raise
     except Exception as e:
-        print(f"更新授权失败: {str(e)}")
+        logger.error(f"更新授权失败: {str(e)}")
         raise HTTPException(status_code=400, detail="更新授权失败，请检查输入信息")
 
 
@@ -293,7 +174,7 @@ async def delete_authorization(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"删除授权失败: {str(e)}")
+        logger.error(f"删除授权失败: {str(e)}")
         raise HTTPException(status_code=400, detail="删除授权失败")
 
 
@@ -312,27 +193,13 @@ async def validate_authorization(
             return Response(data={"valid": False, "message": "授权无效或已过期"})
         
         # 单独查询知识库信息
-        from sqlalchemy import select, join
-        from backend.app.models.knowledge_base import KnowledgeBase
-        
-        result = await db.execute(
-            select(
-                KnowledgeBase.id,
-                KnowledgeBase.name
-            ).select_from(
-                join(
-                    knowledge_base_authorization_association,
-                    KnowledgeBase,
-                    knowledge_base_authorization_association.c.knowledge_base_id == KnowledgeBase.id
-                )
-            ).where(
-                knowledge_base_authorization_association.c.authorization_id == authorization.id
-            )
+        knowledge_base_ids, knowledge_base_names = await get_knowledge_bases_by_authorization_id(
+            db, authorization.id
         )
         
-        knowledge_bases = []
-        for kb_id, kb_name in result.all():
-            knowledge_bases.append({"id": kb_id, "name": kb_name})
+        knowledge_bases = build_knowledge_bases_info(
+            knowledge_base_ids, knowledge_base_names
+        )
         
         return Response(data={
             "valid": True,
@@ -344,7 +211,7 @@ async def validate_authorization(
             }
         })
     except Exception as e:
-        print(f"验证授权失败: {str(e)}")
+        logger.error(f"验证授权失败: {str(e)}")
         return Response(data={"valid": False, "message": "验证失败"})
 
 

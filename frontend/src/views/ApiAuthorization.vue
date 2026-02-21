@@ -304,7 +304,7 @@ const apiAuthApi = {
   // 获取授权列表
   getAuthorizations(params?: any) {
     return request({
-      url: '/api-auth',
+      url: '/api-auth/auth/list',
       method: 'get',
       params
     })
@@ -313,7 +313,7 @@ const apiAuthApi = {
   // 创建授权
   createAuthorization(data: any) {
     return request({
-      url: '/api-auth',
+      url: '/api-auth/auth/create',
       method: 'post',
       data
     })
@@ -322,7 +322,7 @@ const apiAuthApi = {
   // 更新授权
   updateAuthorization(id: string, data: any) {
     return request({
-      url: `/api-auth/${id}`,
+      url: `/api-auth/auth/${id}`,
       method: 'put',
       data
     })
@@ -331,7 +331,7 @@ const apiAuthApi = {
   // 删除授权
   deleteAuthorization(id: string) {
     return request({
-      url: `/api-auth/${id}`,
+      url: `/api-auth/auth/${id}`,
       method: 'delete'
     })
   }

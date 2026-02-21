@@ -290,6 +290,9 @@ const uploadDocument = async () => {
     }
     ElMessage.success('上传文档成功')
     console.log('模态框已关闭')
+    // 刷新文档列表
+    await searchDocuments()
+    console.log('文档列表已刷新')
   } catch (error: any) {
     console.error('上传文档失败:', error)
     // 提取详细错误信息

@@ -109,7 +109,7 @@ async def process_document(
         current_vector_store = vector_store_instances[vector_store_key]
         
         # 向量化并存储
-        current_vector_store.add_chunks(
+        await current_vector_store.add_chunks(
             kb_id=doc.kb_id,
             chunk_ids=chunk_ids,
             contents=chunk_contents,
