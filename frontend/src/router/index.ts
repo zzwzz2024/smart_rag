@@ -49,7 +49,7 @@ const router = createRouter({
           component: () => import('../views/ModelSettings.vue')
         },
         {
-          path: 'api-authorization',
+          path: 'api-auth-management',
           name: 'ApiAuthorization',
           component: () => import('../views/ApiAuthorization.vue')
         },

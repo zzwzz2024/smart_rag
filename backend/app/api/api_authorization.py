@@ -1,9 +1,8 @@
 """
 API授权管理接口
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
 from loguru import logger
 from backend.app.database import get_db
 from backend.app.models.user import User
@@ -358,26 +357,141 @@ class ApiChatRequest(BaseModel):
     kb_id: str
     model_id: str = None
 
+class ApiLogQuery(BaseModel):
+    """API日志查询模型"""
+    auth_code: str = None
+    skip: int = 0
+    limit: int = 20
+    start_date: str = None
+    end_date: str = None
+    vendor: str = None
+
+class ApiLogStatsQuery(BaseModel):
+    """API日志统计查询模型"""
+    auth_code: str = None
+    days: int = 7
+    start_date: str = None
+    end_date: str = None
+    vendor: str = None
+
+
+@router.get("/doc/{authorization_id}")
+async def download_api_doc(
+    authorization_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """下载接口文档"""
+    try:
+        # 获取授权信息
+        authorization = await ApiAuthorizationService.get_authorization_by_id(
+            db, authorization_id
+        )
+        if not authorization:
+            raise HTTPException(status_code=404, detail="授权不存在")
+        
+        # 获取授权的知识库信息
+        from sqlalchemy import select, join
+        from backend.app.models.knowledge_base import KnowledgeBase
+        
+        result = await db.execute(
+            select(
+                KnowledgeBase.id,
+                KnowledgeBase.name
+            ).select_from(
+                join(
+                    knowledge_base_authorization_association,
+                    KnowledgeBase,
+                    knowledge_base_authorization_association.c.knowledge_base_id == KnowledgeBase.id
+                )
+            ).where(
+                knowledge_base_authorization_association.c.authorization_id == authorization_id
+            )
+        )
+        
+        knowledge_bases = []
+        for kb_id, kb_name in result.all():
+            knowledge_bases.append({"id": kb_id, "name": kb_name})
+        
+        # 读取接口文档模板
+        import os
+        # 获取项目根目录
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        template_path = os.path.join(project_root, "API接口模版v1.0.0.md")
+        try:
+            with open(template_path, "r", encoding="utf-8") as f:
+                template_content = f.read()
+        except FileNotFoundError:
+            raise HTTPException(status_code=500, detail="接口文档模板文件不存在")
+        
+        # 生成授权内容表格
+        auth_table = "| 序号 | 授权厂商  | 授权码 | 知识库ID | 知识库名称  | 授权码有效期  | \n"
+        auth_table += "|------|------|------|------|------|\n"
+        
+        for i, kb in enumerate(knowledge_bases, 1):
+            auth_table += f"| {i} | {authorization.vendor_name} | {authorization.auth_code} | {kb['id']} | {kb['name']} | {authorization.start_time.strftime('%Y-%m-%d')}至{authorization.end_time.strftime('%Y-%m-%d')} |\n"
+        
+        # 替换模板中的授权内容
+        import re
+        updated_content = re.sub(
+            r"### 2\.2 授权内容[\s\S]*?(?=## 3\. 授权验证接口)",
+            f"### 2.2 授权内容\n{auth_table}",
+            template_content
+        )
+        
+        # 生成文件名
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        filename = f"之之接口说明文档-{authorization.vendor_name}-{today}.md"
+        
+        # 返回文件
+        from fastapi.responses import Response
+        import urllib.parse
+        # 将内容转换为UTF-8编码的字节
+        content_bytes = updated_content.encode('utf-8')
+        # 对文件名进行URL编码，处理中文字符
+        encoded_filename = urllib.parse.quote(filename)
+        return Response(
+            content=content_bytes,
+            media_type="text/markdown; charset=utf-8",
+            headers={
+                "Content-Disposition": f"attachment; filename={encoded_filename}; filename*=UTF-8''{encoded_filename}"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"下载接口文档失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="下载接口文档失败")
+
 
 @router.post("/chat", response_model=Response)
 async def api_chat(
     request: ApiChatRequest,
     auth_code: str,
     db: AsyncSession = Depends(get_db),
+    fastapi_request: Request = None,
 ):
     """使用API授权码访问知识库"""
+    import time
+    start_time = time.time()
+    status = 200
+    error_message = None
+    client_ip = '127.0.0.1'  # 默认值
+    
     try:
+        # 获取客户端IP
+        if fastapi_request:
+            client_ip = fastapi_request.client.host if fastapi_request.client else '127.0.0.1'
+        
         # 验证授权
-        from fastapi import Request
-        
-        # 获取客户端IP（这里简化处理，实际部署时应从请求头获取）
-        client_ip = '127.0.0.1'  # 临时值，实际应从请求对象获取
-        
         authorization = await ApiAuthorizationService.validate_authorization(
             db, auth_code, client_ip
         )
         if not authorization:
-            return Response(data={"success": False, "message": "授权无效或已过期"})
+            status = 401
+            error_message = "授权无效或已过期"
+            return Response(data={"success": False, "message": error_message})
         
         # 检查知识库是否在授权列表中
         from sqlalchemy import select, join
@@ -399,7 +513,9 @@ async def api_chat(
         )
         
         if not result.scalar_one_or_none():
-            return Response(data={"success": False, "message": "知识库未授权"})
+            status = 403
+            error_message = "知识库未授权"
+            return Response(data={"success": False, "message": error_message})
         
         # 处理聊天请求
         from backend.app.core.rag_pipeline import RAGPipeline
@@ -421,7 +537,9 @@ async def api_chat(
             )
             default_model = model_result.scalar_one_or_none()
             if not default_model:
-                return Response(data={"success": False, "message": "无可用模型"})
+                status = 500
+                error_message = "无可用模型"
+                return Response(data={"success": False, "message": error_message})
             model_id = default_model.id
         
         # 获取模型的完整信息
@@ -473,4 +591,148 @@ async def api_chat(
         })
     except Exception as e:
         print(f"API聊天失败: {str(e)}")
+        status = 500
+        error_message = str(e)
         return Response(data={"success": False, "message": "请求失败，请稍后重试"})
+    finally:
+        # 记录日志
+        try:
+            from backend.app.services.api_log_service import ApiLogService
+            
+            response_time = (time.time() - start_time) * 1000  # 转换为毫秒
+            
+            await ApiLogService.create_log(
+                db=db,
+                auth_code=auth_code,
+                endpoint="/api-auth/chat",
+                method="POST",
+                ip=client_ip,
+                status=status,
+                response_time=response_time,
+                error_message=error_message
+            )
+        except Exception as log_error:
+            print(f"记录日志失败: {str(log_error)}")
+
+
+@router.post("/logs/list", response_model=Response)
+async def get_api_logs(
+    query: ApiLogQuery,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """获取API访问日志列表"""
+    try:
+        from backend.app.services.api_log_service import ApiLogService
+        
+        logs = await ApiLogService.get_logs(
+            db, 
+            skip=query.skip, 
+            limit=query.limit,
+            auth_code=query.auth_code,
+            start_date=query.start_date,
+            end_date=query.end_date,
+            vendor=query.vendor
+        )
+        
+        total = await ApiLogService.get_log_count(
+            db, 
+            auth_code=query.auth_code,
+            start_date=query.start_date,
+            end_date=query.end_date,
+            vendor=query.vendor
+        )
+        
+        # 构建响应数据
+        log_data = []
+        for log in logs:
+            log_data.append({
+                "id": log.id,
+                "auth_code": log.auth_code,
+                "endpoint": log.endpoint,
+                "method": log.method,
+                "ip": log.ip,
+                "status": log.status,
+                "response_time": log.response_time,
+                "error_message": log.error_message,
+                "created_at": log.created_at
+            })
+        
+        return Response(data={
+            "logs": log_data,
+            "total": total
+        })
+    except Exception as e:
+        print(f"获取日志失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取日志失败")
+
+
+@router.post("/logs/stats", response_model=Response)
+async def get_api_log_stats(
+    query: ApiLogStatsQuery,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """获取API访问统计数据"""
+    try:
+        from backend.app.services.api_log_service import ApiLogService
+        
+        stats = await ApiLogService.get_access_stats(
+            db, 
+            days=query.days,
+            auth_code=query.auth_code,
+            start_date=query.start_date,
+            end_date=query.end_date,
+            vendor=query.vendor
+        )
+        
+        return Response(data={"stats": stats})
+    except Exception as e:
+        print(f"获取日志统计失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取日志统计失败")
+
+
+@router.post("/logs/vendor-stats", response_model=Response)
+async def get_api_log_vendor_stats(
+    query: ApiLogStatsQuery,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """获取API访问厂商统计数据"""
+    try:
+        from backend.app.services.api_log_service import ApiLogService
+        
+        stats = await ApiLogService.get_vendor_stats(
+            db, 
+            days=query.days,
+            start_date=query.start_date,
+            end_date=query.end_date
+        )
+        
+        return Response(data={"stats": stats})
+    except Exception as e:
+        print(f"获取厂商统计失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取厂商统计失败")
+
+
+@router.post("/logs/endpoint-stats", response_model=Response)
+async def get_api_log_endpoint_stats(
+    query: ApiLogStatsQuery,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """获取API访问接口名统计数据"""
+    try:
+        from backend.app.services.api_log_service import ApiLogService
+        
+        stats = await ApiLogService.get_endpoint_stats(
+            db, 
+            days=query.days,
+            start_date=query.start_date,
+            end_date=query.end_date
+        )
+        
+        return Response(data={"stats": stats})
+    except Exception as e:
+        print(f"获取接口名统计失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取接口名统计失败")

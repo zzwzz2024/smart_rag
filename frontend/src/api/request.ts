@@ -22,6 +22,11 @@ request.interceptors.request.use(
 // 响应拦截器
 request.interceptors.response.use(
   (response) => {
+    // 如果是blob类型的响应，直接返回，用于文件下载
+    if (response.config.responseType === 'blob') {
+      return response.data
+    }
+    
     // 处理统一的响应格式
     const data = response.data
     if (data.code === 200) {

@@ -2,10 +2,16 @@
   <div class="api-auth-container">
     <div class="api-auth-header">
       <h2>API授权管理</h2>
-      <el-button type="primary" @click="showCreateDialog = true">
-        <el-icon><Plus /></el-icon>
-        <span>创建授权</span>
-      </el-button>
+      <div class="header-buttons">
+        <el-button type="primary" @click="showCreateDialog = true">
+          <el-icon><Plus /></el-icon>
+          <span>创建授权</span>
+        </el-button>
+        <el-button type="info" @click="openLogDialog">
+          <el-icon><View /></el-icon>
+          <span>查看日志</span>
+        </el-button>
+      </div>
     </div>
 
     <!-- 创建授权对话框 -->
@@ -116,11 +122,15 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="scope">
             <el-button size="small" @click="editAuthorization(scope.row)">
               <el-icon><Edit /></el-icon>
               <span>编辑</span>
+            </el-button>
+            <el-button size="small" type="primary" @click="downloadApiDoc(scope.row)">
+              <el-icon><Download /></el-icon>
+              <span>下载文档</span>
             </el-button>
             <el-button size="small" type="danger" @click="deleteAuthorization(scope.row.id)">
               <el-icon><Delete /></el-icon>
@@ -143,16 +153,151 @@
         @current-change="handleCurrentChange"
       />
     </div>
+
+    <!-- 日志查看对话框 -->
+    <el-dialog
+      v-model="showLogDialog"
+      title="API访问日志"
+      width="800px"
+      :close-on-click-modal="false"
+    >
+      <el-tabs v-model="activeLogTab" @tab-click="handleTabChange">
+        <el-tab-pane label="日志列表" name="list">
+          <div class="log-list-container">
+            <div class="log-search-form">
+              <el-form :inline="true" :model="logSearchForm" class="mb-4">
+                <el-form-item label="开始日期">
+                  <el-date-picker
+                    v-model="logSearchForm.startDate"
+                    type="date"
+                    placeholder="选择开始日期"
+                    style="width: 180px"
+                  />
+                </el-form-item>
+                <el-form-item label="结束日期">
+                  <el-date-picker
+                    v-model="logSearchForm.endDate"
+                    type="date"
+                    placeholder="选择结束日期"
+                    style="width: 180px"
+                  />
+                </el-form-item>
+                <el-form-item label="厂商">
+                  <el-select
+                    v-model="logSearchForm.vendor"
+                    placeholder="选择厂商"
+                    style="width: 180px"
+                  >
+                    <el-option
+                      v-for="vendor in vendorOptions"
+                      :key="vendor"
+                      :label="vendor"
+                      :value="vendor"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item>
+                  <el-button type="primary" @click="searchLogs">
+                    <el-icon><Search /></el-icon>
+                    <span>查询</span>
+                  </el-button>
+                  <el-button @click="resetLogSearch">
+                    <el-icon><Refresh /></el-icon>
+                    <span>重置</span>
+                  </el-button>
+                </el-form-item>
+              </el-form>
+            </div>
+            <el-table :data="logsData" style="width: 100%" v-loading="logsLoading">
+              <el-table-column label="访问时间" width="200">
+                <template #default="scope">
+                  {{ formatDate(scope.row.created_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="auth_code" label="授权码" width="300" />
+              <el-table-column prop="endpoint" label="接口名" width="200" />
+              <el-table-column label="响应时间" width="120">
+                <template #default="scope">
+                  {{ formatResponseTime(scope.row.response_time) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="status" label="状态" width="100" />
+              <el-table-column prop="ip" label="IP地址" width="150" />
+            </el-table>
+            <div class="log-pagination">
+              <el-pagination
+                v-model:current-page="logPagination.currentPage"
+                v-model:page-size="logPagination.pageSize"
+                :page-sizes="[10, 20, 50, 100]"
+                layout="total, sizes, prev, pager, next, jumper"
+                :total="logPagination.total"
+                @size-change="handleLogSizeChange"
+                @current-change="handleLogCurrentChange"
+              />
+            </div>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="访问统计" name="chart">
+          <div class="log-chart-container">
+            <!-- 接口访问趋势 -->
+            <el-card class="mb-4">
+              <template #header>
+                <div class="card-header">
+                  <span>接口访问趋势</span>
+                  <el-form :inline="true" :model="chartDateForm" class="chart-date-form">
+                    <el-form-item label="统计天数">
+                      <el-select
+                        v-model="chartDateForm.days"
+                        placeholder="选择统计天数"
+                        style="width: 120px"
+                        @change="loadAllStats"
+                      >
+                        <el-option label="7天" value="7" />
+                        <el-option label="30天" value="30" />
+                        <el-option label="90天" value="90" />
+                      </el-select>
+                    </el-form-item>
+                  </el-form>
+                </div>
+              </template>
+              <div id="accessChart" style="height: 400px;"></div>
+            </el-card>
+            
+            <!-- 按厂商统计 -->
+            <el-card class="mb-4">
+              <template #header>
+                <div class="card-header">
+                  <span>按厂商统计</span>
+                </div>
+              </template>
+              <div id="vendorChart" style="height: 400px;"></div>
+            </el-card>
+            
+            <!-- 按接口名统计 -->
+            <el-card>
+              <template #header>
+                <div class="card-header">
+                  <span>按接口名统计</span>
+                </div>
+              </template>
+              <div id="endpointChart" style="height: 400px;"></div>
+            </el-card>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, Search, Refresh } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Search, Refresh, View } from '@element-plus/icons-vue'
 import { useKbStore } from '../stores/kb'
 import request from '../api/request'
 import type { KnowledgeBase } from '../types'
+// 引入ECharts
+import * as echarts from 'echarts'
 
 // API 接口
 const apiAuthApi = {
@@ -365,6 +510,34 @@ const formatDate = (dateString: string) => {
   return date.toLocaleString('zh-CN')
 }
 
+// 格式化响应时间
+const formatResponseTime = (ms: number): string => {
+  if (ms < 1000) {
+    return `${ms}ms`
+  }
+  
+  const totalSeconds = ms / 1000
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  
+  let result = ''
+  
+  if (hours > 0) {
+    result += `${hours}h `
+  }
+  
+  if (minutes > 0 || hours > 0) {
+    result += `${minutes}m `
+  }
+  
+  // 格式化秒数，保留小数点后三位，去除末尾的零
+  const secondsStr = seconds.toFixed(3).replace(/\.?0+$/, '')
+  result += `${secondsStr}s`
+  
+  return result
+}
+
 // 判断授权是否有效
 const isAuthorizationValid = (authorization: any) => {
   // 首先检查is_active状态
@@ -380,6 +553,43 @@ const isAuthorizationValid = (authorization: any) => {
   return now >= startTime && now <= endTime
 }
 
+// 下载接口文档
+const downloadApiDoc = async (authorization: any) => {
+  try {
+    // 使用axios发送请求，利用拦截器自动添加认证token
+    const response = await request({
+      url: `/api-auth/doc/${authorization.id}`,
+      method: 'get',
+      responseType: 'blob' // 重要：设置响应类型为blob
+    })
+    
+    // 生成文件名
+    const vendorName = authorization.vendor_name || 'unknown'
+    const today = new Date().toISOString().split('T')[0]
+    const filename = `之之接口说明文档-${vendorName}-${today}.md`
+    
+    // 创建Blob对象
+    const blob = new Blob([response], { type: 'text/markdown; charset=utf-8' })
+    
+    // 创建下载链接
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    
+    // 模拟点击下载
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    
+    ElMessage.success('接口文档下载中，请选择保存路径')
+  } catch (error: any) {
+    const errorMessage = error.response?.data?.detail || '下载接口文档失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
 // 分页处理
 const handleSizeChange = (size: number) => {
   pagination.value.pageSize = size
@@ -391,6 +601,96 @@ const handleCurrentChange = (current: number) => {
   loadAuthorizations()
 }
 
+// 日志相关变量
+const showLogDialog = ref(false)
+const activeLogTab = ref('list')
+const logsData = ref<any[]>([])
+const logsLoading = ref(false)
+const logPagination = ref({
+  currentPage: 1,
+  pageSize: 10,
+  total: 0
+})
+
+// 日志查询表单
+const logSearchForm = ref({
+  startDate: null as Date | null,
+  endDate: null as Date | null,
+  vendor: ''
+})
+
+// 厂商选项
+const vendorOptions = ref<string[]>([])
+
+// 图表日期表单
+const chartDateForm = ref({
+  days: 7
+})
+
+// 加载日志数据
+const loadLogs = async () => {
+  logsLoading.value = true
+  try {
+    // 构建查询参数
+    const queryData = {
+      skip: (logPagination.value.currentPage - 1) * logPagination.value.pageSize,
+      limit: logPagination.value.pageSize
+    }
+    
+    // 添加日期和厂商查询条件
+    if (logSearchForm.value.startDate) {
+      queryData.start_date = logSearchForm.value.startDate.toISOString().split('T')[0]
+    }
+    if (logSearchForm.value.endDate) {
+      queryData.end_date = logSearchForm.value.endDate.toISOString().split('T')[0]
+    }
+    if (logSearchForm.value.vendor) {
+      queryData.vendor = logSearchForm.value.vendor
+    }
+    
+    const response = await request({
+      url: `/api-auth/logs/list`,
+      method: 'post',
+      data: queryData
+    })
+    logsData.value = response.logs || []
+    logPagination.value.total = response.total || 0
+  } catch (error: any) {
+    const errorMessage = error.response?.data?.detail || '获取日志失败'
+    ElMessage.error(errorMessage)
+  } finally {
+    logsLoading.value = false
+  }
+}
+
+// 查询日志
+const searchLogs = () => {
+  logPagination.value.currentPage = 1
+  loadLogs()
+}
+
+// 重置日志查询
+const resetLogSearch = () => {
+  logSearchForm.value = {
+    startDate: null,
+    endDate: null,
+    vendor: ''
+  }
+  logPagination.value.currentPage = 1
+  loadLogs()
+}
+
+// 日志分页处理
+const handleLogSizeChange = (size: number) => {
+  logPagination.value.pageSize = size
+  loadLogs()
+}
+
+const handleLogCurrentChange = (current: number) => {
+  logPagination.value.currentPage = current
+  loadLogs()
+}
+
 // 初始化
 onMounted(async () => {
   await Promise.all([
@@ -398,6 +698,310 @@ onMounted(async () => {
     loadAuthorizations()
   ])
 })
+
+// 加载统计数据
+const loadStats = async () => {
+  try {
+    const response = await request({
+      url: `/api-auth/logs/stats`,
+      method: 'post',
+      data: {
+        days: chartDateForm.value.days
+      }
+    })
+    
+    const stats = response.stats || []
+    initChart(stats)
+  } catch (error: any) {
+    const errorMessage = error.response?.data?.detail || '获取统计数据失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 加载厂商统计数据
+const loadVendorStats = async () => {
+  try {
+    const response = await request({
+      url: `/api-auth/logs/vendor-stats`,
+      method: 'post',
+      data: {
+        days: chartDateForm.value.days
+      }
+    })
+    
+    const stats = response.stats || []
+    initVendorChart(stats)
+  } catch (error: any) {
+    const errorMessage = error.response?.data?.detail || '获取厂商统计数据失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 加载接口名统计数据
+const loadEndpointStats = async () => {
+  try {
+    const response = await request({
+      url: `/api-auth/logs/endpoint-stats`,
+      method: 'post',
+      data: {
+        days: chartDateForm.value.days
+      }
+    })
+    
+    const stats = response.stats || []
+    initEndpointChart(stats)
+  } catch (error: any) {
+    const errorMessage = error.response?.data?.detail || '获取接口名统计数据失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 加载所有统计数据
+const loadAllStats = async () => {
+  await Promise.all([
+    loadStats(),
+    loadVendorStats(),
+    loadEndpointStats()
+  ])
+}
+
+// 初始化图表
+let chartInstance: echarts.ECharts | null = null
+let vendorChartInstance: echarts.ECharts | null = null
+let endpointChartInstance: echarts.ECharts | null = null
+
+// 初始化访问趋势图表
+const initChart = (stats: any[]) => {
+  nextTick(() => {
+    const chartDom = document.getElementById('accessChart')
+    if (!chartDom) return
+    
+    // 销毁旧实例
+    if (chartInstance) {
+      chartInstance.dispose()
+    }
+    
+    // 创建新实例
+    chartInstance = echarts.init(chartDom)
+    
+    // 准备数据
+    const dates = stats.map(item => item.date)
+    const counts = stats.map(item => item.count)
+    
+    // 配置项
+    const option = {
+      tooltip: {
+        trigger: 'axis',
+        formatter: '{b}: {c} 次'
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: dates
+      },
+      yAxis: {
+        type: 'value',
+        minInterval: 1
+      },
+      series: [
+        {
+          name: '访问次数',
+          type: 'line',
+          stack: 'Total',
+          data: counts,
+          smooth: true,
+          itemStyle: {
+            color: '#409EFF'
+          },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              {
+                offset: 0,
+                color: 'rgba(64, 158, 255, 0.5)'
+              },
+              {
+                offset: 1,
+                color: 'rgba(64, 158, 255, 0.1)'
+              }
+            ])
+          }
+        }
+      ]
+    }
+    
+    // 设置配置项
+    chartInstance.setOption(option)
+    
+    // 响应式处理
+    window.addEventListener('resize', () => {
+      chartInstance?.resize()
+    })
+  })
+}
+
+// 初始化厂商统计图表
+const initVendorChart = (stats: any[]) => {
+  nextTick(() => {
+    const chartDom = document.getElementById('vendorChart')
+    if (!chartDom) return
+    
+    // 销毁旧实例
+    if (vendorChartInstance) {
+      vendorChartInstance.dispose()
+    }
+    
+    // 创建新实例
+    vendorChartInstance = echarts.init(chartDom)
+    
+    // 准备数据
+    const vendors = stats.map(item => item.vendor)
+    const counts = stats.map(item => item.count)
+    
+    // 配置项
+    const option = {
+      tooltip: {
+        trigger: 'item',
+        formatter: '{b}: {c} 次 ({d}%)'
+      },
+      legend: {
+        orient: 'vertical',
+        left: 'left',
+        data: vendors
+      },
+      series: [
+        {
+          name: '访问次数',
+          type: 'pie',
+          radius: '50%',
+          center: ['60%', '50%'],
+          data: stats.map(item => ({name: item.vendor, value: item.count})),
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 10,
+              shadowOffsetX: 0,
+              shadowColor: 'rgba(0, 0, 0, 0.5)'
+            }
+          }
+        }
+      ]
+    }
+    
+    // 设置配置项
+    vendorChartInstance.setOption(option)
+    
+    // 响应式处理
+    window.addEventListener('resize', () => {
+      vendorChartInstance?.resize()
+    })
+  })
+}
+
+// 初始化接口名统计图表
+const initEndpointChart = (stats: any[]) => {
+  nextTick(() => {
+    const chartDom = document.getElementById('endpointChart')
+    if (!chartDom) return
+    
+    // 销毁旧实例
+    if (endpointChartInstance) {
+      endpointChartInstance.dispose()
+    }
+    
+    // 创建新实例
+    endpointChartInstance = echarts.init(chartDom)
+    
+    // 准备数据
+    const endpoints = stats.map(item => item.endpoint)
+    const counts = stats.map(item => item.count)
+    
+    // 配置项
+    const option = {
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
+        },
+        formatter: '{b}: {c} 次'
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: endpoints,
+        axisLabel: {
+          rotate: 45
+        }
+      },
+      yAxis: {
+        type: 'value',
+        minInterval: 1
+      },
+      series: [
+        {
+          name: '访问次数',
+          type: 'bar',
+          data: counts,
+          itemStyle: {
+            color: '#67C23A'
+          }
+        }
+      ]
+    }
+    
+    // 设置配置项
+    endpointChartInstance.setOption(option)
+    
+    // 响应式处理
+    window.addEventListener('resize', () => {
+      endpointChartInstance?.resize()
+    })
+  })
+}
+
+// 打开日志对话框时加载数据
+const openLogDialog = async () => {
+  showLogDialog.value = true
+  
+  // 加载厂商选项
+  loadVendorOptions()
+  
+  // 加载日志数据
+  await loadLogs()
+  
+  // 切换到图表标签时再加载统计数据
+  if (activeLogTab.value === 'chart') {
+    await loadAllStats()
+  }
+}
+
+// 加载厂商选项
+const loadVendorOptions = () => {
+  // 从授权列表中提取厂商名称
+  const vendors = new Set<string>()
+  authorizations.value.forEach(auth => {
+    if (auth.vendor_name) {
+      vendors.add(auth.vendor_name)
+    }
+  })
+  vendorOptions.value = Array.from(vendors)
+}
+
+// 监听标签切换
+const handleTabChange = async (tab: any) => {
+  if (tab.props.name === 'chart') {
+    await loadAllStats()
+  }
+}
 </script>
 
 <style scoped>
@@ -410,6 +1014,11 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 30px;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 10px;
 }
 
 .api-auth-header h2 {
@@ -446,5 +1055,26 @@ onMounted(async () => {
     align-items: flex-start;
     gap: 12px;
   }
+}
+
+/* 日志相关样式 */
+.log-list-container {
+  margin-bottom: 20px;
+}
+
+.log-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.log-chart-container {
+  margin-top: 16px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 </style>

@@ -4,14 +4,16 @@
 
 本文档详细说明如何使用API授权码访问知识库，包括授权验证、知识库查询等功能的调用方法和参数说明。
 
-## 2. 接口清单
+## 2. 接口信息
+
+### 2.1 接口说明
 
 | 接口名称 | 方法 | 路径 | 功能描述 |
 |---------|------|------|----------|
 | 授权验证 | GET | /api/api-auth/validate/{auth_code} | 验证API授权码是否有效 |
 | 知识库查询 | POST | /api/api-auth/chat | 使用授权码访问知识库并获取回答 |
 
-### 3.2 授权内容
+### 2.2 授权内容
 | 序号 | 授权厂商  | 授权码 | 知识库ID | 知识库名称  | 授权码有效期  | 
 |------|------|------|------|------|
 | 1 | 蓝点 | xxxxxxxxxxxxx |xxxxxxxxxxxxx | 法律法规检索 |2026-03-22至2026-03-23 |
@@ -95,16 +97,7 @@ curl "http://localhost:8000/api/api-auth/validate/your_auth_code?ip=192.168.1.10
   "success": true,
   "data": {
     "success": true,
-    "answer": "机器学习是一种人工智能技术，它允许计算机从数据中学习而不需要明确编程...",
-    "sources": [
-      {
-        "id": "doc_123",
-        "title": "人工智能基础",
-        "content": "...相关内容...",
-        "score": 0.95
-      }
-    ],
-    "thought": "根据知识库中的信息，我需要回答关于机器学习的定义..."
+    "answer": "{\"filename\": \"2.txt\", \"content\": \"你好，你是谁？\\r我是林俊杰\\r最近写了一首新歌\", \"score\": 0.016393442622950817}",
   },
   "message": ""
 }
@@ -133,19 +126,11 @@ curl -X POST "http://localhost:8000/api/api-auth/chat?auth_code=your_auth_code" 
 
 ## 6. 完整调用流程
 
-### 6.1 获取API授权码
-
-1. 登录系统管理后台
-2. 进入"API授权管理"页面
-3. 点击"创建授权"
-4. 填写供应商信息、授权IP（可选）、授权知识库、有效期等信息
-5. 提交后系统会生成唯一的API授权码
-
-### 6.2 验证授权
+### 6.1 验证授权
 
 在正式调用知识库查询接口前，建议先调用授权验证接口确认授权是否有效。
 
-### 6.3 调用知识库查询
+### 6.2 调用知识库查询
 
 使用有效的授权码调用知识库查询接口，获取知识库的回答。
 
@@ -196,56 +181,24 @@ else:
     print("授权无效:", validation_result['data']['message'])
 ```
 
-### 7.2 JavaScript示例
+### 7.2 工具调用
 
-```javascript
-// 使用Fetch API
-
-// 授权验证
-async function validateAuthorization(authCode) {
-  const response = await fetch(`http://localhost:8000/api/api-auth/validate/${authCode}`);
-  return await response.json();
+body选择raw格式，传参
+{
+    "query":"林俊杰最近写歌了吗",
+    "kb_id":"69701332-85a5-431b-ab16-495b84b6f348"
 }
 
-// 知识库查询
-async function queryKnowledgeBase(authCode, query, kbId, modelId = null) {
-  const response = await fetch(`http://localhost:8000/api/api-auth/chat?auth_code=${authCode}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      query,
-      kb_id: kbId,
-      model_id: modelId
-    })
-  });
-  return await response.json();
+返回数据
+{
+	"code": 200,
+	"msg": "success",
+	"data": {
+		"success": true,
+		"answer": "{\"filename\": \"2.txt\", \"content\": \"你好，你是谁？\\r我是林俊杰\\r最近写了一首新歌\", \"score\": 0.016393442622950817}"
+	}
 }
 
-// 使用示例
-const authCode = "your_auth_code";
-const kbId = "69701332-85a5-431b-ab16-495b84b6f348";
-
-async function runExample() {
-  // 验证授权
-  const validationResult = await validateAuthorization(authCode);
-  if (validationResult.data.valid) {
-    console.log("授权有效，可以查询知识库");
-    // 查询知识库
-    const result = await queryKnowledgeBase(
-      authCode, 
-      "什么是机器学习？", 
-      kbId
-    );
-    console.log("回答:", result.data.answer);
-  } else {
-    console.log("授权无效:", validationResult.data.message);
-  }
-}
-
-runExample();
-```
 
 ## 8. 注意事项
 
@@ -278,7 +231,7 @@ runExample();
 
 ## 10. 联系支持
 
-如果在使用API接口过程中遇到问题，请联系系统管理员获取支持。
+如果在使用API接口过程中遇到问题，请联系系统管理员小王 xxx获取支持。
 
 ---
 

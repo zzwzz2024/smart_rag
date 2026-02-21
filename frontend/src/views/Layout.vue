@@ -43,8 +43,8 @@
                   <span>知识库评估</span>
                 </router-link>
               </li>
-              <li :class="{ 'active': route.path === '/api-authorization' }">
-                <router-link to="/api-authorization" @click="handleMenuClick('/api-authorization', 'api_management', 'API接口管理')">
+              <li :class="{ 'active': route.path === '/api-auth-management' }">
+                <router-link to="/api-auth-management" @click="handleMenuClick('/api-auth-management', 'api_management', 'API接口管理')">
                   <i class="icon">🔑</i>
                   <span>API接口管理</span>
                 </router-link>
