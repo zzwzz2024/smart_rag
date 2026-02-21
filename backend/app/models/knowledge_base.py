@@ -30,6 +30,9 @@ class KnowledgeBase(Base):
     )
     chunk_size: Mapped[int] = mapped_column(Integer, default=512)
     chunk_overlap: Mapped[int] = mapped_column(Integer, default=64)
+    chunk_method: Mapped[str] = mapped_column(
+        String(50), default="smart"
+    )  # smart / line / paragraph
     retrieval_mode: Mapped[str] = mapped_column(
         String(20), default="hybrid"
     )  # vector / keyword / hybrid

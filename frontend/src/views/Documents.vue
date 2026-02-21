@@ -69,12 +69,12 @@
           </div>
           <div v-else-if="documentChunks.length > 0" class="document-content">
             <div
-              v-for="(chunk, index) in documentChunks"
+              v-for="(chunk, index) in paginatedChunks"
               :key="chunk.id || index"
               class="document-chunk"
             >
               <div class="chunk-header">
-                <span class="chunk-index">段落 {{ chunk.chunk_index || index + 1 }}</span>
+                <span class="chunk-index">段落 {{ chunk.index }}</span>
                 <span v-if="chunk.score" class="chunk-score">相关性: {{ (chunk.score * 100).toFixed(2) }}%</span>
               </div>
               <div class="chunk-content">{{ chunk.content }}</div>
@@ -84,10 +84,49 @@
             <p>文档内容为空</p>
           </div>
         </div>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-secondary" @click="showDocumentModal = false">
-            关闭
-          </button>
+        <div class="modal-footer">
+          <!-- 文档块分页控件 -->
+          <div class="chunk-pagination">
+            <div class="pagination-info">
+              共 {{ chunkPagination.total }} 个段落，
+              第 {{ chunkPagination.currentPage }} / {{ chunkPagination.totalPages }} 页
+            </div>
+            <div class="pagination-controls">
+              <button
+                class="btn btn-outline"
+                @click="changeChunkPage(1)"
+                :disabled="chunkPagination.currentPage === 1"
+              >
+                首页
+              </button>
+              <button
+                class="btn btn-outline"
+                @click="changeChunkPage(chunkPagination.currentPage - 1)"
+                :disabled="chunkPagination.currentPage === 1"
+              >
+                上一页
+              </button>
+              <button
+                class="btn btn-outline"
+                @click="changeChunkPage(chunkPagination.currentPage + 1)"
+                :disabled="chunkPagination.currentPage >= chunkPagination.totalPages"
+              >
+                下一页
+              </button>
+              <button
+                class="btn btn-outline"
+                @click="changeChunkPage(chunkPagination.totalPages)"
+                :disabled="chunkPagination.currentPage >= chunkPagination.totalPages"
+              >
+                末页
+              </button>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="showDocumentModal = false">
+              关闭
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -154,7 +193,7 @@
             <tr>
               <th>序号</th>
               <th>文件名</th>
-              <th>文档数量</th>
+              <th>分块数量</th>
               <th>创建时间</th>
               <th>操作</th>
             </tr>
@@ -165,12 +204,12 @@
               :key="doc.id"
             >
               <td>{{ index + 1 }}</td>
+              <td>{{ doc.filename }}</td>
               <td>
                 <a href="#" class="document-link" @click.prevent="viewDocument(doc)">
-                  {{ doc.filename }}
+                  {{ doc.chunk_count }}
                 </a>
               </td>
-              <td>{{ doc.chunk_count }}</td>
               <td>{{ formatTime(doc.created_at) }}</td>
               <td>
                 <button
@@ -267,12 +306,41 @@ const searchParams = ref({
   page_size: 10
 })
 
+// 文档内容分页
+const chunkPagination = ref({
+  currentPage: 1,
+  pageSize: 1,
+  total: 0,
+  totalPages: 0
+})
+const paginatedChunks = ref<any[]>([])
+
 // 处理文件选择
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
   if (target.files && target.files[0]) {
     selectedFile.value = target.files[0]
   }
+}
+
+// 计算分页后的文档块
+const calculatePaginatedChunks = () => {
+  const total = documentChunks.value.length
+  const currentPage = chunkPagination.value.currentPage
+  const pageSize = chunkPagination.value.pageSize
+  const startIndex = (currentPage - 1) * pageSize
+  const endIndex = startIndex + pageSize
+  
+  paginatedChunks.value = documentChunks.value.slice(startIndex, endIndex)
+  chunkPagination.value.total = total
+  chunkPagination.value.totalPages = Math.ceil(total / pageSize)
+}
+
+// 切换文档块页码
+const changeChunkPage = (page: number) => {
+  if (page < 1 || page > chunkPagination.value.totalPages) return
+  chunkPagination.value.currentPage = page
+  calculatePaginatedChunks()
 }
 
 // 上传文档
@@ -302,7 +370,7 @@ const uploadDocument = async () => {
 }
 
 // 确认删除文档
-const confirmDeleteDocument = (docId: number) => {
+const confirmDeleteDocument = async (docId: number) => {
   ElMessageBox.confirm(
     '确定要删除这个文档吗？删除后将无法恢复。',
     '删除确认',
@@ -312,8 +380,11 @@ const confirmDeleteDocument = (docId: number) => {
       type: 'warning',
     }
   )
-    .then(() => {
-      kbStore.deleteDocument(docId)
+    .then(async () => {
+      await kbStore.deleteDocument(docId)
+      // 刷新文档列表
+      await searchDocuments()
+      ElMessage.success('文档删除成功')
     })
     .catch(() => {
       // 用户取消删除
@@ -327,7 +398,14 @@ const viewDocument = async (doc: any) => {
   try {
     const response = await documentApi.getDocumentChunks(doc.id)
     const chunks = response.data || response
-    documentChunks.value = chunks
+    // 为每个分块添加索引属性
+    documentChunks.value = chunks.map((chunk: any, index: number) => ({
+      ...chunk,
+      index: index + 1
+    }))
+    // 重置分页
+    chunkPagination.value.currentPage = 1
+    calculatePaginatedChunks()
     showDocumentModal.value = true
   } catch (error: any) {
     // 提取详细错误信息
@@ -421,7 +499,7 @@ watch(selectedKnowledgeBase, async (newKbId) => {
 })
 
 // 加载知识库列表
-onMounted(async () => {
+const loadKnowledgeBases = async () => {
   try {
     await kbStore.getKnowledgeBases()
     // 从路由参数中获取知识库ID
@@ -432,7 +510,34 @@ onMounted(async () => {
   } catch (error) {
     console.error('加载知识库列表失败:', error)
   }
+}
+
+// 加载知识库列表
+onMounted(async () => {
+  await loadKnowledgeBases()
 })
+
+// 监听路由变化，当检测到_refresh参数时重新加载数据
+watch(
+  () => route.query, 
+  async (newQuery) => {
+    if (newQuery._refresh) {
+      await loadKnowledgeBases()
+      // 如果当前有选中的知识库，重新加载其文档
+      if (selectedKnowledgeBase.value) {
+        try {
+          await Promise.all([
+            kbStore.getKnowledgeBase(selectedKnowledgeBase.value),
+            kbStore.getDocuments(selectedKnowledgeBase.value, searchParams.value)
+          ])
+        } catch (error) {
+          console.error('刷新知识库数据失败:', error)
+        }
+      }
+    }
+  },
+  { deep: true }
+)
 </script>
 
 <style scoped>
@@ -626,7 +731,16 @@ onMounted(async () => {
 .document-modal .modal-body {
   flex: 1;
   overflow-y: auto;
-  max-height: 60vh;
+  padding-bottom: 20px;
+}
+
+.document-modal .modal-footer {
+  padding: 20px;
+  border-top: 1px solid #e0e0e0;
+  background-color: #f9f9f9;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .document-content {
@@ -666,6 +780,44 @@ onMounted(async () => {
   color: #333;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* 文档块分页控件样式 */
+.chunk-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.chunk-pagination .pagination-info {
+  font-size: 14px;
+  color: #666;
+}
+
+.chunk-pagination .pagination-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.chunk-pagination .btn-outline {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  background-color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chunk-pagination .btn-outline:hover:not(:disabled) {
+  border-color: #4CAF50;
+  color: #4CAF50;
+}
+
+.chunk-pagination .btn-outline:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 查询表单样式 */

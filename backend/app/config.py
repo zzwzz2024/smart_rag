@@ -35,9 +35,9 @@ class Settings(BaseSettings):
     # ---- 检索 ----
     CHUNK_SIZE: int = 512
     CHUNK_OVERLAP: int = 64
-    RETRIEVAL_TOP_K: int = 20          # 粗检索数
-    RERANK_TOP_K: int = 5              # 精排后保留数
-    SIMILARITY_THRESHOLD: float = 0.3  # 最低相关性阈值
+    RETRIEVAL_TOP_K: int = 30          # 粗检索数
+    RERANK_TOP_K: int = 10             # 精排后保留数
+    SIMILARITY_THRESHOLD: float = 0.2  # 最低相关性阈值
 
     # ---- 本地 Embedding (可选) ----
     USE_LOCAL_EMBEDDING: bool = False

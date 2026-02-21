@@ -36,7 +36,7 @@ export const useKbStore = defineStore('kb', {
       }
     },
 
-    async createKnowledgeBase(data: { name: string; description: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number }) {
+    async createKnowledgeBase(data: { name: string; description: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number; chunk_method?: string }) {
       this.isLoading = true
       this.error = null
       try {
@@ -70,7 +70,7 @@ export const useKbStore = defineStore('kb', {
       }
     },
 
-    async updateKnowledgeBase(kbId: string, data: { name?: string; description?: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number }) {
+    async updateKnowledgeBase(kbId: string, data: { name?: string; description?: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number; chunk_method?: string }) {
       this.isLoading = true
       this.error = null
       try {
@@ -183,10 +183,10 @@ export const useKbStore = defineStore('kb', {
         if (document) {
           this.documents = this.documents.filter(doc => doc.id !== docId)
           // 更新知识库的文档数量
-          if (this.currentKnowledgeBase?.id === document.knowledge_base_id) {
+          if (this.currentKnowledgeBase?.id === document.kb_id) {
             this.currentKnowledgeBase.document_count--
           }
-          const kbIndex = this.knowledgeBases.findIndex(kb => kb.id === document.knowledge_base_id)
+          const kbIndex = this.knowledgeBases.findIndex(kb => kb.id === document.kb_id)
           if (kbIndex !== -1) {
             this.knowledgeBases[kbIndex].document_count--
           }

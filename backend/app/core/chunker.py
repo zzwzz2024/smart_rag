@@ -49,8 +49,9 @@ class SmartChunker:
         parsed_doc: ParsedDocument,
         doc_id: str,
         kb_id: str,
+        chunk_method: str = "smart",
     ) -> List[Chunk]:
-        """根据文档类型选择分块策略"""
+        """根据文档类型和分块方式选择分块策略"""
         content = parsed_doc.content
         file_type = parsed_doc.metadata.get("file_type", "")
         file_name = parsed_doc.metadata.get("file_name", "")
@@ -60,7 +61,11 @@ class SmartChunker:
             return []
 
         # 策略路由
-        if self._is_markdown_structured(content):
+        if chunk_method == "line":
+            chunks = self._chunk_by_line(content)
+        elif chunk_method == "paragraph":
+            chunks = self._chunk_by_paragraph(content)
+        elif self._is_markdown_structured(content):
             chunks = self._chunk_by_headers(content)
         elif self._is_qa_format(content):
             chunks = self._chunk_by_qa(content)
@@ -300,3 +305,35 @@ class SmartChunker:
             if chunk_start in page.get("content", ""):
                 return page["page"]
         return None
+
+    # ───────── 策略 6: 按行分块 ─────────
+    def _chunk_by_line(self, content: str) -> List[Chunk]:
+        """按行分块，每行作为一个块"""
+        lines = content.strip().split('\n')
+        chunks = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # 每行作为一个单独的块
+            chunks.append(Chunk(content=line))
+        
+        return chunks
+
+    # ───────── 策略 7: 按段落分块 ─────────
+    def _chunk_by_paragraph(self, content: str) -> List[Chunk]:
+        """按段落分块，每个段落作为一个块"""
+        paragraphs = content.strip().split('\n\n')
+        chunks = []
+        
+        for paragraph in paragraphs:
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+            
+            # 每个段落作为一个单独的块
+            chunks.append(Chunk(content=paragraph))
+        
+        return chunks

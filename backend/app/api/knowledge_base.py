@@ -107,6 +107,7 @@ async def create_kb(
         rerank_model_id=rerank_model_id,
         chunk_size=data.get('chunk_size') or 512,
         chunk_overlap=data.get('chunk_overlap') or 64,
+        chunk_method=data.get('chunk_method') or "smart",
         retrieval_mode=data.get('retrieval_mode') or "hybrid",
         owner_id=user.id,
     )

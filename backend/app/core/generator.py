@@ -182,11 +182,36 @@ class Generator:
         if not retrieved_chunks:
             return 0.3  # 无参考信息的置信度较低
 
-        # 基于检索结果的数量和平均分数计算置信度
-        avg_score = sum(r.score for r in retrieved_chunks) / len(retrieved_chunks)
-        count_factor = min(len(retrieved_chunks) / 5.0, 1.0)  # 最多5个结果为满分
+        # 获取向量分数和BM25分数
+        vector_scores = [r.vector_score for r in retrieved_chunks if r.vector_score > 0]
+        bm25_scores = [r.bm25_score for r in retrieved_chunks if r.bm25_score > 0]
+        
+        # 计算平均分数
+        if vector_scores and bm25_scores:
+            avg_vector_score = sum(vector_scores) / len(vector_scores)
+            avg_bm25_score = sum(bm25_scores) / len(bm25_scores)
+            # 综合向量和BM25分数
+            avg_score = (avg_vector_score * 0.6 + avg_bm25_score * 0.4)
+        elif vector_scores:
+            avg_score = sum(vector_scores) / len(vector_scores)
+        elif bm25_scores:
+            avg_score = sum(bm25_scores) / len(bm25_scores)
+        else:
+            # 使用RRF分数作为兜底
+            avg_score = sum(r.score for r in retrieved_chunks) / len(retrieved_chunks)
 
-        confidence = (avg_score * 0.7 + count_factor * 0.3)
+        # 计算数量因子
+        count_factor = min(len(retrieved_chunks) / 3.0, 1.0)  # 最多3个结果为满分，提高权重
+        
+        # 调整权重，提高分数的影响
+        confidence = (avg_score * 0.8 + count_factor * 0.2)
+        
+        # 对高相关结果给予额外提升
+        if avg_score > 0.7:
+            confidence = min(confidence * 1.1, 1.0)
+        elif avg_score > 0.5:
+            confidence = min(confidence * 1.05, 1.0)
+
         return min(confidence, 1.0)
 
     def _build_citations(self, retrieved_chunks: List[RetrievalResult]) -> List[Dict]:

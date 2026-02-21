@@ -161,6 +161,9 @@
         @click.stop
       >
         <ul>
+          <li @click="handleContextMenuAction('refreshCurrent')">
+            刷新当前页签
+          </li>
           <li @click="handleContextMenuAction('closeCurrent')">
             关闭当前标签
           </li>
@@ -313,6 +316,18 @@ const handleContextMenuAction = (action: string) => {
   const { currentTab, currentIndex } = contextMenu.value
   
   switch (action) {
+    case 'refreshCurrent':
+      if (currentTab) {
+        // 刷新当前页签，通过添加时间戳查询参数来触发组件重新加载
+        const currentPath = currentTab.path
+        // 生成时间戳作为查询参数
+        const timestamp = new Date().getTime()
+        // 检查路径是否已经有查询参数
+        const separator = currentPath.includes('?') ? '&' : '?'
+        // 导航到带有时间戳的路径
+        router.push(`${currentPath}${separator}_refresh=${timestamp}`)
+      }
+      break
     case 'closeCurrent':
       if (currentTab) {
         handleTabClose(currentTab.path)
