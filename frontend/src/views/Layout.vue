@@ -190,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, onUnmounted } from 'vue'
+import { computed, onMounted, ref, onUnmounted,nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useUserStore } from '../stores/user'
@@ -318,14 +318,12 @@ const handleContextMenuAction = (action: string) => {
   switch (action) {
     case 'refreshCurrent':
       if (currentTab) {
-        // 刷新当前页签，通过添加时间戳查询参数来触发组件重新加载
-        const currentPath = currentTab.path
-        // 生成时间戳作为查询参数
-        const timestamp = new Date().getTime()
-        // 检查路径是否已经有查询参数
-        const separator = currentPath.includes('?') ? '&' : '?'
-        // 导航到带有时间戳的路径
-        router.push(`${currentPath}${separator}_refresh=${timestamp}`)
+        const { path, query } = route;
+        console.log("refreshCurrentrefreshCurrent~~~~~~~")
+        router.replace({
+          path,
+          query: { ...query, _refresh: Date.now() } // 添加唯一查询参数
+        }).catch(console.error);
       }
       break
     case 'closeCurrent':

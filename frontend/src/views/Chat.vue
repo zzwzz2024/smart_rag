@@ -426,13 +426,14 @@ onMounted(async () => {
 
 // 监听路由变化，当检测到_refresh参数时重新加载数据
 watch(
-  () => route.query, 
-  async (newQuery) => {
-    if (newQuery._refresh) {
+  () => route.fullPath, 
+  async (newPath, oldPath) => {
+    console.log('路由变化:', oldPath, '->', newPath)
+    if (newPath.includes('_refresh=')) {
+      console.log('检测到刷新参数，重新加载数据...')
       await loadData()
     }
-  },
-  { deep: true }
+  }
 )
 </script>
 

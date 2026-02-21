@@ -290,7 +290,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Search, Refresh, View } from '@element-plus/icons-vue'
 import { useKbStore } from '../stores/kb'
@@ -698,6 +699,25 @@ onMounted(async () => {
     loadAuthorizations()
   ])
 })
+
+// 监听路由变化，检测 _refresh 参数触发重载
+const route = useRoute()
+watch(
+  () => route.query._refresh,  // 直接监听 _refresh 查询参数
+  async (newValue) => {
+    if (newValue) {
+      console.log('检测到 _refresh，重新加载授权列表和知识库...')
+      await Promise.all([
+        loadKnowledgeBases(),
+        loadAuthorizations()
+      ])
+      // 可选：清除 _refresh 避免重复触发
+      // router.replace({ query: { ...route.query, _refresh: undefined } })
+    }
+  },
+  { immediate: false }
+)
+
 
 // 加载统计数据
 const loadStats = async () => {

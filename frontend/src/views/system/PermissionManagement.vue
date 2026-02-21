@@ -55,6 +55,7 @@ import { ElMessage } from 'element-plus'
 import { Check } from '@element-plus/icons-vue'
 import { roleApi, permissionApi, menuApi } from '../../api/system'
 import type { Role, Permission, Menu } from '../../types/system'
+import {useRoute} from "vue-router";
 
 // 数据
 const roles = ref<Role[]>([])
@@ -378,6 +379,20 @@ onMounted(async () => {
     await handleRoleChange()
   }
 })
+
+const route = useRoute()
+watch(
+  () => route.query._refresh,  // 直接监听 _refresh 查询参数
+  async (newValue) => {
+    if (newValue) {
+      await Promise.all([
+         await loadRoles(),
+         await loadPermissions()
+      ])
+    }
+  },
+  { immediate: false }
+)
 </script>
 
 <style scoped>

@@ -178,12 +178,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import {ref, computed, onMounted, watch} from 'vue'
 import { Plus, Search, Refresh, Edit, Delete, List } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { dictionaryApi } from '../../api/system'
 import type { Dictionary, DictionaryItem } from '../../types/system'
+import {useRoute} from "vue-router";
 
 // 字典数据
 const dictionaries = ref<Dictionary[]>([])
@@ -517,6 +518,19 @@ const handleCurrentChange = (current: number) => {
 onMounted(async () => {
   await loadDictionaries()
 })
+
+const route = useRoute()
+watch(
+  () => route.query._refresh,  // 直接监听 _refresh 查询参数
+  async (newValue) => {
+    if (newValue) {
+      await Promise.all([
+        loadDictionaries()
+      ])
+    }
+  },
+  { immediate: false }
+)
 </script>
 
 <style scoped>

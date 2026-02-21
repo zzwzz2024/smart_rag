@@ -81,11 +81,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import {ref, computed, onMounted, watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { menuApi } from '../../api/system'
 import type { Menu } from '../../types/system'
+import {useRoute} from "vue-router";
 
 // 菜单数据
 const menuTree = ref<any[]>([])
@@ -244,6 +245,19 @@ const saveMenu = async () => {
 onMounted(async () => {
   await loadMenus()
 })
+
+const route = useRoute()
+watch(
+  () => route.query._refresh,  // 直接监听 _refresh 查询参数
+  async (newValue) => {
+    if (newValue) {
+      await Promise.all([
+        loadMenus()
+      ])
+    }
+  },
+  { immediate: false }
+)
 </script>
 
 <style scoped>
