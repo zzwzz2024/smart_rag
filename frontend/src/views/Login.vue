@@ -1,7 +1,7 @@
 <template>
   <div class="login-container">
     <div class="login-card">
-      <h2>ZZWZZ RAG 系统登录</h2>
+      <h2>知知检索登录</h2>
       <form @submit.prevent="handleSubmit">
         <div class="form-group">
           <label for="username">用户名</label>
@@ -41,7 +41,7 @@
 
     <!-- 注册表单 -->
     <div v-if="showRegister" class="login-card register-card">
-      <h2>ZZWZZ RAG 系统注册</h2>
+      <h2>知知检索注册</h2>
       <form @submit.prevent="handleRegister">
         <div class="form-group">
           <label for="reg-username">用户名</label>

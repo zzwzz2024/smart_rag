@@ -3,7 +3,7 @@
     <!-- 侧边栏 -->
     <aside class="sidebar" :class="{ 'collapsed': appStore.sidebarCollapsed }">
       <div class="sidebar-header">
-        <h1 class="logo">ZZWZZ RAG</h1>
+        <h1 class="logo">知知检索</h1>
         <button class="toggle-btn" @click="appStore.toggleSidebar">
           {{ appStore.sidebarCollapsed ? '展开' : '收起' }}
         </button>
@@ -225,7 +225,7 @@ const currentViewTitle = computed(() => {
     'model-settings': '模型管理',
     'system': '系统管理'
   }
-  return viewMap[appStore.currentView] || 'ZZWZZ RAG 系统'
+  return viewMap[appStore.currentView] || '知知检索'
 })
 
 // 计算当前激活的模型子菜单
@@ -382,7 +382,7 @@ onMounted(async () => {
       '/model-settings': '模型管理',
       '/system/users': '系统设置'
     }
-    const title = titleMap[route.path] || 'ZZWZZ RAG 系统'
+    const title = titleMap[route.path] || '知知检索'
     tabsStore.addTab({
       path: route.path,
       name: route.name as string || 'home',
