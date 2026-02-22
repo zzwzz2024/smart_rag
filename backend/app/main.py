@@ -1,6 +1,8 @@
 # main.py
 from fastapi import FastAPI
 import uvicorn
+# 导入app模块以初始化loguru配置
+import backend.app
 from backend.app.api.router import api_router  # 引入已定义的路由
 from backend.app.database import init_db  # 引入数据库初始化函数
 # 创建 FastAPI 应用实例

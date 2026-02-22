@@ -20,6 +20,7 @@ onMounted(() => {
     router.push('/system/users')
   }
 })
+
 </script>
 
 <style scoped>

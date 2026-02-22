@@ -26,6 +26,17 @@ export interface KnowledgeBase {
   description: string
   document_count: number
   created_at: string
+  updated_at: string
+  embedding_model: string
+  embedding_model_id: string
+  rerank_model: string
+  rerank_model_id: string
+  chunk_size: number
+  chunk_overlap: number
+  chunk_method: string
+  doc_count: number
+  chunk_count: number
+  owner_id: string
 }
 
 // 文档类型

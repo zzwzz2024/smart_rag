@@ -53,8 +53,15 @@ async def process_document(
         if not parsed.content.strip():
             raise ValueError("文档内容为空")
 
+        # 获取知识库的分块方式设置
+        kb_result = await db.execute(
+            select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id)
+        )
+        kb = kb_result.scalar_one_or_none()
+        chunk_method = kb.chunk_method if kb else "smart"
+
         # Step 2: 分块
-        chunks = chunker.chunk_document(parsed, doc.id, doc.kb_id)
+        chunks = chunker.chunk_document(parsed, doc.id, doc.kb_id, chunk_method)
         if not chunks:
             raise ValueError("分块结果为空")
 
@@ -109,7 +116,7 @@ async def process_document(
         current_vector_store = vector_store_instances[vector_store_key]
         
         # 向量化并存储
-        current_vector_store.add_chunks(
+        await current_vector_store.add_chunks(
             kb_id=doc.kb_id,
             chunk_ids=chunk_ids,
             contents=chunk_contents,

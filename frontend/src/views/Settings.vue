@@ -70,7 +70,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted ,watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { ElMessage } from 'element-plus'
 
@@ -117,6 +118,20 @@ onMounted(async () => {
     console.error('获取用户信息失败:', error)
   }
 })
+
+const route = useRoute()
+watch(
+  () => route.query._refresh,  // 直接监听 _refresh 查询参数
+  async (newValue) => {
+    if (newValue) {
+      await Promise.all([
+        userStore.getCurrentUser()
+      ])
+    }
+  },
+  { immediate: false }
+)
+
 </script>
 
 <style scoped>

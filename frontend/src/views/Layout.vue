@@ -3,7 +3,7 @@
     <!-- 侧边栏 -->
     <aside class="sidebar" :class="{ 'collapsed': appStore.sidebarCollapsed }">
       <div class="sidebar-header">
-        <h1 class="logo">ZZWZZ RAG</h1>
+        <h1 class="logo">知知检索</h1>
         <button class="toggle-btn" @click="appStore.toggleSidebar">
           {{ appStore.sidebarCollapsed ? '展开' : '收起' }}
         </button>
@@ -43,8 +43,8 @@
                   <span>知识库评估</span>
                 </router-link>
               </li>
-              <li :class="{ 'active': route.path === '/api-authorization' }">
-                <router-link to="/api-authorization" @click="handleMenuClick('/api-authorization', 'api_management', 'API接口管理')">
+              <li :class="{ 'active': route.path === '/api-auth-management' }">
+                <router-link to="/api-auth-management" @click="handleMenuClick('/api-auth-management', 'api_management', 'API接口管理')">
                   <i class="icon">🔑</i>
                   <span>API接口管理</span>
                 </router-link>
@@ -161,6 +161,9 @@
         @click.stop
       >
         <ul>
+          <li @click="handleContextMenuAction('refreshCurrent')">
+            刷新当前页签
+          </li>
           <li @click="handleContextMenuAction('closeCurrent')">
             关闭当前标签
           </li>
@@ -187,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, onUnmounted } from 'vue'
+import { computed, onMounted, ref, onUnmounted,nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { useUserStore } from '../stores/user'
@@ -225,7 +228,7 @@ const currentViewTitle = computed(() => {
     'model-settings': '模型管理',
     'system': '系统管理'
   }
-  return viewMap[appStore.currentView] || 'ZZWZZ RAG 系统'
+  return viewMap[appStore.currentView] || '知知检索'
 })
 
 // 计算当前激活的模型子菜单
@@ -313,6 +316,16 @@ const handleContextMenuAction = (action: string) => {
   const { currentTab, currentIndex } = contextMenu.value
   
   switch (action) {
+    case 'refreshCurrent':
+      if (currentTab) {
+        const { path, query } = route;
+        console.log("refreshCurrentrefreshCurrent~~~~~~~")
+        router.replace({
+          path,
+          query: { ...query, _refresh: Date.now() } // 添加唯一查询参数
+        }).catch(console.error);
+      }
+      break
     case 'closeCurrent':
       if (currentTab) {
         handleTabClose(currentTab.path)
@@ -382,7 +395,7 @@ onMounted(async () => {
       '/model-settings': '模型管理',
       '/system/users': '系统设置'
     }
-    const title = titleMap[route.path] || 'ZZWZZ RAG 系统'
+    const title = titleMap[route.path] || '知知检索'
     tabsStore.addTab({
       path: route.path,
       name: route.name as string || 'home',

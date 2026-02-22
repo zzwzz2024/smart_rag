@@ -64,6 +64,18 @@
             </select>
           </div>
           <div class="form-group">
+            <label for="kb-chunk-method">分块方式 (chunk_method)</label>
+            <select
+              id="kb-chunk-method"
+              v-model="newKbChunkMethod"
+              class="form-control"
+            >
+              <option value="smart">智能分块</option>
+              <option value="line">按行分块</option>
+              <option value="paragraph">按段落分块</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label for="kb-chunk-size">分块大小 (chunk_size)</label>
             <input
               type="number"
@@ -87,15 +99,15 @@
               placeholder="请输入分块重叠"
             />
           </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showCreateModal = false">
-              取消
-            </button>
-            <button type="submit" class="btn btn-primary" :disabled="kbStore.isLoading">
-              {{ kbStore.isLoading ? '创建中...' : '创建' }}
-            </button>
-          </div>
         </form>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" @click="showCreateModal = false">
+            取消
+          </button>
+          <button type="button" class="btn btn-primary" @click="createKnowledgeBase" :disabled="kbStore.isLoading">
+            {{ kbStore.isLoading ? '创建中...' : '创建' }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -156,6 +168,18 @@
             </select>
           </div>
           <div class="form-group">
+            <label for="edit-kb-chunk-method">分块方式 (chunk_method)</label>
+            <select
+              id="edit-kb-chunk-method"
+              v-model="editKbChunkMethod"
+              class="form-control"
+            >
+              <option value="smart">智能分块</option>
+              <option value="line">按行分块</option>
+              <option value="paragraph">按段落分块</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label for="edit-kb-chunk-size">分块大小 (chunk_size)</label>
             <input
               type="number"
@@ -179,15 +203,15 @@
               placeholder="请输入分块重叠"
             />
           </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showEditModal = false">
-              取消
-            </button>
-            <button type="submit" class="btn btn-primary" :disabled="kbStore.isLoading">
-              {{ kbStore.isLoading ? '更新中...' : '更新' }}
-            </button>
-          </div>
         </form>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" @click="showEditModal = false">
+            取消
+          </button>
+          <button type="button" class="btn btn-primary" @click="updateKnowledgeBase" :disabled="kbStore.isLoading">
+            {{ kbStore.isLoading ? '更新中...' : '更新' }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -245,11 +269,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useKbStore } from '../stores/kb'
 import { useModelStore } from '../stores/model'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import type { KnowledgeBase } from '../types'
+
+const route = useRoute()
 
 const kbStore = useKbStore()
 const modelStore = useModelStore()
@@ -262,6 +289,7 @@ const newKbEmbeddingModelId = ref('')
 const newKbRerankModelId = ref('')
 const newKbChunkSize = ref(512)
 const newKbChunkOverlap = ref(64)
+const newKbChunkMethod = ref('smart')
 
 // 编辑知识库表单
 const showEditModal = ref(false)
@@ -272,6 +300,7 @@ const editKbEmbeddingModelId = ref('')
 const editKbRerankModelId = ref('')
 const editKbChunkSize = ref(512)
 const editKbChunkOverlap = ref(64)
+const editKbChunkMethod = ref('smart')
 
 // 编辑知识库
 const editKnowledgeBase = (kb: KnowledgeBase) => {
@@ -282,11 +311,12 @@ const editKnowledgeBase = (kb: KnowledgeBase) => {
   editKbRerankModelId.value = kb.rerank_model_id || ''
   editKbChunkSize.value = kb.chunk_size || 512
   editKbChunkOverlap.value = kb.chunk_overlap || 64
+  editKbChunkMethod.value = kb.chunk_method || 'smart'
   showEditModal.value = true
 }
 
 // 确认删除知识库
-const confirmDeleteKnowledgeBase = (kbId: string) => {
+const confirmDeleteKnowledgeBase = async (kbId: string) => {
   ElMessageBox.confirm(
     '确定要删除这个知识库吗？删除后将无法恢复。',
     '删除确认',
@@ -296,8 +326,11 @@ const confirmDeleteKnowledgeBase = (kbId: string) => {
       type: 'warning',
     }
   )
-    .then(() => {
-      kbStore.deleteKnowledgeBase(kbId)
+    .then(async () => {
+      await kbStore.deleteKnowledgeBase(kbId)
+      // 刷新知识库列表
+      await kbStore.getKnowledgeBases()
+      ElMessage.success('知识库删除成功')
     })
     .catch(() => {
       // 用户取消删除
@@ -315,7 +348,8 @@ const createKnowledgeBase = async () => {
       embedding_model_id: newKbEmbeddingModelId.value,
       rerank_model_id: newKbRerankModelId.value,
       chunk_size: newKbChunkSize.value,
-      chunk_overlap: newKbChunkOverlap.value
+      chunk_overlap: newKbChunkOverlap.value,
+      chunk_method: newKbChunkMethod.value
     })
     showCreateModal.value = false
     newKbName.value = ''
@@ -324,6 +358,7 @@ const createKnowledgeBase = async () => {
     newKbRerankModelId.value = ''
     newKbChunkSize.value = 512
     newKbChunkOverlap.value = 64
+    newKbChunkMethod.value = 'smart'
     ElMessage.success('创建知识库成功')
   } catch (error: any) {
     // 提取详细错误信息
@@ -343,7 +378,8 @@ const updateKnowledgeBase = async () => {
       embedding_model_id: editKbEmbeddingModelId.value,
       rerank_model_id: editKbRerankModelId.value,
       chunk_size: editKbChunkSize.value,
-      chunk_overlap: editKbChunkOverlap.value
+      chunk_overlap: editKbChunkOverlap.value,
+      chunk_method: editKbChunkMethod.value
     })
     showEditModal.value = false
     ElMessage.success('知识库更新成功')
@@ -360,8 +396,8 @@ const formatTime = (timeString: string): string => {
   return date.toLocaleString('zh-CN')
 }
 
-// 加载知识库列表
-onMounted(async () => {
+// 加载数据
+const loadData = async () => {
   try {
     await Promise.all([
       kbStore.getKnowledgeBases(),
@@ -373,7 +409,23 @@ onMounted(async () => {
     const errorMessage = error.response?.data?.detail || '加载数据失败'
     ElMessage.error(errorMessage)
   }
+}
+
+// 加载知识库列表
+onMounted(async () => {
+  await loadData()
 })
+
+// 监听路由变化，当检测到_refresh参数时重新加载数据
+watch(
+  () => route.query, 
+  async (newQuery) => {
+    if (newQuery._refresh) {
+      await loadData()
+    }
+  },
+  { deep: true }
+)
 </script>
 
 <style scoped>
@@ -411,9 +463,11 @@ onMounted(async () => {
 .modal-content {
   background-color: white;
   border-radius: 8px;
-  padding: 30px;
   width: 100%;
   max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
@@ -421,13 +475,24 @@ onMounted(async () => {
   margin: 0 0 20px 0;
   font-size: 18px;
   font-weight: 600;
+  padding: 30px 30px 0 30px;
+}
+
+.modal-content form {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 30px;
+  margin-bottom: 20px;
 }
 
 .modal-actions {
+  padding: 20px 30px 30px 30px;
+  border-top: 1px solid #e0e0e0;
+  background-color: white;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 20px;
+  margin-top: 0;
 }
 
 /* 知识库列表样式 */

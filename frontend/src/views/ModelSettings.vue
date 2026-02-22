@@ -161,7 +161,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, useRouter } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
@@ -464,14 +464,37 @@ const setDefaultModel = async (modelId: string) => {
 }
 
 // 监听路由参数变化
+// const router = useRouter()
 watch(
-  () => route.query.type,
-  async (newType) => {
-    if (newType && ['embedding', 'chat', 'rerank'].includes(newType as string)) {
-      currentModelType.value = newType as 'embedding' | 'chat' | 'rerank'
-      await loadModels()
+  () => ({
+    type: route.query.type,
+    refresh: route.query._refresh // 👈 新增监听 _refresh
+  }),
+  async ({ type, refresh }) => {
+    console.log('路由参数变化:', { type, refresh })
+    // 优先处理 type 变化
+    if (type && ['embedding', 'chat', 'rerank'].includes(type as string)) {
+      console.log('检测到 type 变化:', type)
+      currentModelType.value = type as 'embedding' | 'chat' | 'rerank'
     }
-  }
+
+    // 再处理刷新请求
+    if (refresh) {
+      console.log('检测到 _refresh，重新加载模型列表...')
+      try {
+        await loadModels();
+        // 清除 _refresh 避免重复触发
+        // router.replace({ query: { ...route.query, _refresh: undefined } });
+      } catch (error) {
+        console.error('刷新模型列表失败:', error);
+        ElMessage.error('刷新失败，请重试');
+      }
+    }else{
+       await loadVendors()
+       await loadModels()
+    }
+  },
+  { immediate: false }
 )
 
 // 初始化

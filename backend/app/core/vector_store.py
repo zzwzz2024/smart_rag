@@ -58,7 +58,7 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"},
         )
 
-    def add_chunks(
+    async def add_chunks(
         self,
         kb_id: str,
         chunk_ids: List[str],
@@ -72,7 +72,7 @@ class VectorStore:
         collection = self._get_collection(kb_id)
 
         # 批量 Embedding
-        embeddings = self.embedder.embed_texts(contents)
+        embeddings = await self.embedder.embed_texts(contents)
 
         # 写入 ChromaDB
         batch_size = 500

@@ -254,7 +254,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { evaluationApi } from '../api/evaluation'
 import { useKbStore } from '../stores/kb'
 import { useModelStore } from '../stores/model'
@@ -519,6 +520,25 @@ onMounted(async () => {
     ElMessage.error('加载数据失败: ' + (error.message || '未知错误'))
   }
 })
+
+// 监听路由变化，检测 _refresh 参数触发重载
+const route = useRoute()
+watch(
+  () => route.query._refresh,  // 直接监听 _refresh 查询参数
+  async (newValue) => {
+    if (newValue) {
+      console.log('检测到 _refresh，重新加载授权列表和知识库...')
+      await Promise.all([
+        getEvaluations(),
+        kbStore.getKnowledgeBases(),
+        modelStore.getModels()
+      ])
+      // 可选：清除 _refresh 避免重复触发
+      router.replace({ query: { ...route.query, _refresh: undefined } })
+    }
+  },
+  { immediate: false }
+)
 </script>
 
 <style scoped>

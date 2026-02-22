@@ -13,6 +13,7 @@ class KBCreate(BaseModel):
     rerank_model_id: Optional[str] = None
     chunk_size: Optional[int] = 512
     chunk_overlap: Optional[int] = 64
+    chunk_method: Optional[str] = "smart"
     retrieval_mode: Optional[str] = "hybrid"
 
 
@@ -26,6 +27,7 @@ class KBUpdate(BaseModel):
     rerank_model_id: Optional[str] = None
     chunk_size: Optional[int] = None
     chunk_overlap: Optional[int] = None
+    chunk_method: Optional[str] = None
     retrieval_mode: Optional[str] = None
 
 
@@ -40,6 +42,7 @@ class KBResponse(BaseModel):
     rerank_model_id: Optional[str]
     chunk_size: int
     chunk_overlap: int
+    chunk_method: str
     retrieval_mode: str
     doc_count: int
     chunk_count: int

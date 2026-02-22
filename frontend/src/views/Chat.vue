@@ -109,7 +109,11 @@
           >
             <div class="chat-message-content">
               {{ message.content }}
-              <div v-if="message.role === 'assistant' && message.confidence" class="confidence-badge">
+              <div v-if="message.role === 'assistant' && message.confidence" class="confidence-badge" :class="{
+                'confidence-low': message.confidence < 0.5,
+                'confidence-medium': message.confidence >= 0.5 && message.confidence < 0.75,
+                'confidence-high': message.confidence >= 0.75
+              }">
                 置信度: {{ Math.round(message.confidence * 100) }}%
               </div>
             </div>
@@ -166,6 +170,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useChatStore } from '../stores/chat'
 import { useKbStore } from '../stores/kb'
 import { useModelStore } from '../stores/model'
@@ -173,6 +178,7 @@ import { ElMessage } from 'element-plus'
 import { chatApi } from '../api/chat'
 import type { Conversation } from '../types'
 
+const route = useRoute()
 const chatStore = useChatStore()
 const kbStore = useKbStore()
 const modelStore = useModelStore()
@@ -393,8 +399,8 @@ watch(() => chatStore.messages.length, () => {
   scrollToBottom()
 })
 
-// 加载对话历史和知识库列表
-onMounted(async () => {
+// 加载数据
+const loadData = async () => {
   try {
     await Promise.all([
       chatStore.getConversations(),
@@ -411,7 +417,24 @@ onMounted(async () => {
     const errorMessage = error.response?.data?.detail || '加载数据失败'
     ElMessage.error(errorMessage)
   }
+}
+
+// 加载对话历史和知识库列表
+onMounted(async () => {
+  await loadData()
 })
+
+// 监听路由变化，当检测到_refresh参数时重新加载数据
+watch(
+  () => route.fullPath, 
+  async (newPath, oldPath) => {
+    console.log('路由变化:', oldPath, '->', newPath)
+    if (newPath.includes('_refresh=')) {
+      console.log('检测到刷新参数，重新加载数据...')
+      await loadData()
+    }
+  }
+)
 </script>
 
 <style scoped>
@@ -667,12 +690,30 @@ body.dark-mode .chat-header-top {
 
 .confidence-badge {
   font-size: 12px;
-  color: #666;
+  font-weight: 500;
   margin-top: 8px;
   padding: 4px 8px;
-  background-color: rgba(0, 0, 0, 0.05);
   border-radius: 12px;
   display: inline-block;
+  border: 1px solid transparent;
+}
+
+.confidence-low {
+  background-color: #ffebee;
+  color: #c62828;
+  border-color: #ffcdd2;
+}
+
+.confidence-medium {
+  background-color: #fff3e0;
+  color: #ef6c00;
+  border-color: #ffcc80;
+}
+
+.confidence-high {
+  background-color: #e8f5e8;
+  color: #2e7d32;
+  border-color: #c8e6c9;
 }
 
 .citations {
@@ -861,6 +902,24 @@ body.dark-mode .chat-message-bot {
 body.dark-mode .confidence-badge {
   background-color: rgba(255, 255, 255, 0.1);
   color: #a0a0a0;
+}
+
+body.dark-mode .confidence-low {
+  background-color: rgba(198, 40, 40, 0.2);
+  color: #ff8a80;
+  border-color: rgba(198, 40, 40, 0.3);
+}
+
+body.dark-mode .confidence-medium {
+  background-color: rgba(239, 108, 0, 0.2);
+  color: #ffb74d;
+  border-color: rgba(239, 108, 0, 0.3);
+}
+
+body.dark-mode .confidence-high {
+  background-color: rgba(46, 125, 50, 0.2);
+  color: #81c784;
+  border-color: rgba(46, 125, 50, 0.3);
 }
 
 body.dark-mode .citations {

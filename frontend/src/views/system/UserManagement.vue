@@ -114,11 +114,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import {ref, onMounted, watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Refresh, Edit, Delete } from '@element-plus/icons-vue'
 import { userApi, roleApi } from '../../api/system'
 import type { User } from '../../types/system'
+import {useRoute} from "vue-router";
 
 // 数据
 const users = ref<any[]>([])
@@ -334,6 +335,20 @@ onMounted(async () => {
   await loadRoles()
   await loadUsers()
 })
+
+const route = useRoute()
+watch(
+  () => route.query._refresh,  // 直接监听 _refresh 查询参数
+  async (newValue) => {
+    if (newValue) {
+      await Promise.all([
+         await loadRoles(),
+         await loadUsers()
+      ])
+    }
+  },
+  { immediate: false }
+)
 </script>
 
 <style scoped>
