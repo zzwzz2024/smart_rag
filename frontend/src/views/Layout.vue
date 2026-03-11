@@ -49,6 +49,18 @@
                   <span>API接口管理</span>
                 </router-link>
               </li>
+              <li :class="{ 'active': route.path === '/kb/tags' }">
+                <router-link to="/kb/tags" @click="handleMenuClick('/kb/tags', 'tag_management', '标签管理')">
+                  <i class="icon">🏷️</i>
+                  <span>标签管理</span>
+                </router-link>
+              </li>
+              <li :class="{ 'active': route.path === '/kb/domains' }">
+                <router-link to="/kb/domains" @click="handleMenuClick('/kb/domains', 'domain_management', '领域管理')">
+                  <i class="icon">🌐</i>
+                  <span>领域管理</span>
+                </router-link>
+              </li>
             </ul>
           </li>
           <!-- 静态菜单：模型管理 -->
@@ -217,19 +229,21 @@ const contextMenu = ref({
 const openSubmenu = ref<string | null>(null)
 
 // 当前视图标题
-const currentViewTitle = computed(() => {
-  const viewMap: Record<string, string> = {
-    'chat': '智能聊天',
-    'knowledge-base': '知识库管理',
-    'documents': '文档管理',
-    'evaluation': '知识库评估',
-    'api_management': 'API接口管理',
-    'settings': '系统管理',
-    'model-settings': '模型管理',
-    'system': '系统管理'
-  }
-  return viewMap[appStore.currentView] || '知知检索'
-})
+  const currentViewTitle = computed(() => {
+    const viewMap: Record<string, string> = {
+      'chat': '智能聊天',
+      'knowledge-base': '知识库管理',
+      'documents': '文档管理',
+      'evaluation': '知识库评估',
+      'api_management': 'API接口管理',
+      'tag_management': '标签管理',
+      'domain_management': '领域管理',
+      'settings': '系统管理',
+      'model-settings': '模型管理',
+      'system': '系统管理'
+    }
+    return viewMap[appStore.currentView] || '知知检索'
+  })
 
 // 计算当前激活的模型子菜单
 const activeModelSubmenu = computed(() => {
@@ -246,7 +260,7 @@ const handleMenuClick = (path: string, view: string, title: string) => {
     openSubmenu.value = null
   }
   // 点击知识库相关菜单时，保持知识库子菜单打开
-  if (view === 'knowledge-base' || view === 'evaluation' || view === 'documents' || view === 'api_management') {
+  if (view === 'knowledge-base' || view === 'evaluation' || view === 'documents' || view === 'api_management' || view === 'tag_management' || view === 'domain_management') {
     openSubmenu.value = 'knowledge'
   }
   // 点击模型相关菜单时，保持模型子菜单打开
@@ -385,23 +399,25 @@ onMounted(async () => {
   }
   
   // 初始化默认页签
-  if (route.path !== '/login') {
-    const titleMap: Record<string, string> = {
-      '/chat': '聊天',
-      '/knowledge-base': '知识库',
-      '/documents': '文档管理',
-      '/evaluation': '知识库评估',
-      '/api-authorization': 'API接口管理',
-      '/model-settings': '模型管理',
-      '/system/users': '系统设置'
+    if (route.path !== '/login') {
+      const titleMap: Record<string, string> = {
+        '/chat': '聊天',
+        '/knowledge-base': '知识库',
+        '/documents': '文档管理',
+        '/evaluation': '知识库评估',
+        '/api-auth-management': 'API接口管理',
+        '/kb/tags': '标签管理',
+        '/kb/domains': '领域管理',
+        '/model-settings': '模型管理',
+        '/system/users': '系统设置'
+      }
+      const title = titleMap[route.path] || '知知检索'
+      tabsStore.addTab({
+        path: route.path,
+        name: route.name as string || 'home',
+        title
+      })
     }
-    const title = titleMap[route.path] || '知知检索'
-    tabsStore.addTab({
-      path: route.path,
-      name: route.name as string || 'home',
-      title
-    })
-  }
   
   // 添加点击事件监听器，点击页面其他地方时隐藏右键菜单
   document.addEventListener('click', hideContextMenu)

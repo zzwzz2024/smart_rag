@@ -18,6 +18,9 @@ export const kbApi = {
     rerank_model_id?: string
     chunk_size?: number
     chunk_overlap?: number
+    chunk_method?: string
+    tag_ids?: string[]
+    domain_ids?: string[]
   }) {
     return request<KnowledgeBase>({
       url: '/kb/knowledge-base',
@@ -42,6 +45,9 @@ export const kbApi = {
     rerank_model_id?: string
     chunk_size?: number
     chunk_overlap?: number
+    chunk_method?: string
+    tag_ids?: string[]
+    domain_ids?: string[]
   }) {
     return request<KnowledgeBase>({
       url: `/kb/knowledge-base/${kbId}`,

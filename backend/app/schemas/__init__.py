@@ -5,3 +5,5 @@ from backend.app.schemas.chat import *
 from backend.app.schemas.evaluation import *
 from backend.app.schemas.model import *
 from backend.app.schemas.system import *
+from backend.app.schemas.tag import *
+from backend.app.schemas.domain import *

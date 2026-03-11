@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 
 class KBCreate(BaseModel):
@@ -15,6 +15,8 @@ class KBCreate(BaseModel):
     chunk_overlap: Optional[int] = 64
     chunk_method: Optional[str] = "smart"
     retrieval_mode: Optional[str] = "hybrid"
+    tag_ids: Optional[List[str]] = []
+    domain_ids: Optional[List[str]] = []
 
 
 class KBUpdate(BaseModel):
@@ -29,6 +31,8 @@ class KBUpdate(BaseModel):
     chunk_overlap: Optional[int] = None
     chunk_method: Optional[str] = None
     retrieval_mode: Optional[str] = None
+    tag_ids: Optional[List[str]] = None
+    domain_ids: Optional[List[str]] = None
 
 
 class KBResponse(BaseModel):
@@ -49,6 +53,8 @@ class KBResponse(BaseModel):
     owner_id: str
     created_at: datetime
     updated_at: datetime
+    tags: List[dict] = []
+    domains: List[dict] = []
 
     class Config:
         from_attributes = True

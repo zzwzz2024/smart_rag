@@ -100,6 +100,36 @@
               placeholder="请输入分块重叠"
             />
           </div>
+          <div class="form-group">
+            <label>标签</label>
+            <div class="tag-selector">
+              <el-checkbox-group v-model="newKbTagIds">
+                <el-checkbox
+                  v-for="tag in tagStore.tags"
+                  :key="tag.id"
+                  :label="tag.id"
+                  :disabled="!tag.is_active"
+                >
+                  <span :style="{ color: tag.color }"> {{ tag.name }}</span>
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>领域</label>
+            <div class="domain-selector">
+              <el-checkbox-group v-model="newKbDomainIds">
+                <el-checkbox
+                  v-for="domain in domainStore.domains"
+                  :key="domain.id"
+                  :label="domain.id"
+                  :disabled="!domain.is_active"
+                >
+                  {{ domain.name }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+          </div>
         </form>
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" @click="showCreateModal = false">
@@ -205,6 +235,36 @@
               placeholder="请输入分块重叠"
             />
           </div>
+          <div class="form-group">
+            <label>标签</label>
+            <div class="tag-selector">
+              <el-checkbox-group v-model="editKbTagIds">
+                <el-checkbox
+                  v-for="tag in tagStore.tags"
+                  :key="tag.id"
+                  :label="tag.id"
+                  :disabled="!tag.is_active"
+                >
+                  <span :style="{ color: tag.color }"> {{ tag.name }}</span>
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>领域</label>
+            <div class="domain-selector">
+              <el-checkbox-group v-model="editKbDomainIds">
+                <el-checkbox
+                  v-for="domain in domainStore.domains"
+                  :key="domain.id"
+                  :label="domain.id"
+                  :disabled="!domain.is_active"
+                >
+                  {{ domain.name }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+          </div>
         </form>
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" @click="showEditModal = false">
@@ -243,6 +303,27 @@
         </div>
         <div class="kb-card-body">
           <p class="kb-description">{{ kb.description }}</p>
+          <div class="kb-tags" v-if="kb.tags && kb.tags.length > 0">
+            <span class="kb-label">标签：</span>
+            <span
+              v-for="tag in kb.tags"
+              :key="tag.id"
+              class="kb-tag"
+              :style="{ backgroundColor: tag.color + '20', color: tag.color }"
+            >
+              {{ tag.name }}
+            </span>
+          </div>
+          <div class="kb-domains" v-if="kb.domains && kb.domains.length > 0">
+            <span class="kb-label">所属领域：</span>
+            <span
+              v-for="domain in kb.domains"
+              :key="domain.id"
+              class="kb-domain"
+            >
+              {{ domain.name }}
+            </span>
+          </div>
           <div class="kb-stats">
             <span class="kb-stat-item">
               📄 {{ kb.doc_count }} 个文档
@@ -275,6 +356,8 @@ import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useKbStore } from '../stores/kb'
 import { useModelStore } from '../stores/model'
+import { useTagStore } from '../stores/tag'
+import { useDomainStore } from '../stores/domain'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import type { KnowledgeBase } from '../types'
 
@@ -282,6 +365,8 @@ const route = useRoute()
 
 const kbStore = useKbStore()
 const modelStore = useModelStore()
+const tagStore = useTagStore()
+const domainStore = useDomainStore()
 
 // 创建知识库表单
 const showCreateModal = ref(false)
@@ -292,6 +377,8 @@ const newKbRerankModelId = ref('')
 const newKbChunkSize = ref(512)
 const newKbChunkOverlap = ref(64)
 const newKbChunkMethod = ref('smart')
+const newKbTagIds = ref<string[]>([])
+const newKbDomainIds = ref<string[]>([])
 
 // 编辑知识库表单
 const showEditModal = ref(false)
@@ -303,6 +390,8 @@ const editKbRerankModelId = ref('')
 const editKbChunkSize = ref(512)
 const editKbChunkOverlap = ref(64)
 const editKbChunkMethod = ref('smart')
+const editKbTagIds = ref<string[]>([])
+const editKbDomainIds = ref<string[]>([])
 
 // 编辑知识库
 const editKnowledgeBase = (kb: KnowledgeBase) => {
@@ -314,6 +403,8 @@ const editKnowledgeBase = (kb: KnowledgeBase) => {
   editKbChunkSize.value = kb.chunk_size || 512
   editKbChunkOverlap.value = kb.chunk_overlap || 64
   editKbChunkMethod.value = kb.chunk_method || 'smart'
+  editKbTagIds.value = kb.tags?.map(tag => tag.id) || []
+  editKbDomainIds.value = kb.domains?.map(domain => domain.id) || []
   showEditModal.value = true
 }
 
@@ -351,7 +442,9 @@ const createKnowledgeBase = async () => {
       rerank_model_id: newKbRerankModelId.value,
       chunk_size: newKbChunkSize.value,
       chunk_overlap: newKbChunkOverlap.value,
-      chunk_method: newKbChunkMethod.value
+      chunk_method: newKbChunkMethod.value,
+      tag_ids: newKbTagIds.value,
+      domain_ids: newKbDomainIds.value
     })
     showCreateModal.value = false
     newKbName.value = ''
@@ -361,6 +454,8 @@ const createKnowledgeBase = async () => {
     newKbChunkSize.value = 512
     newKbChunkOverlap.value = 64
     newKbChunkMethod.value = 'smart'
+    newKbTagIds.value = []
+    newKbDomainIds.value = []
     ElMessage.success('创建知识库成功')
   } catch (error: any) {
     // 提取详细错误信息
@@ -381,7 +476,9 @@ const updateKnowledgeBase = async () => {
       rerank_model_id: editKbRerankModelId.value,
       chunk_size: editKbChunkSize.value,
       chunk_overlap: editKbChunkOverlap.value,
-      chunk_method: editKbChunkMethod.value
+      chunk_method: editKbChunkMethod.value,
+      tag_ids: editKbTagIds.value,
+      domain_ids: editKbDomainIds.value
     })
     showEditModal.value = false
     ElMessage.success('知识库更新成功')
@@ -404,7 +501,9 @@ const loadData = async () => {
     await Promise.all([
       kbStore.getKnowledgeBases(),
       modelStore.getEmbeddingModels(),
-      modelStore.getRerankModels()
+      modelStore.getRerankModels(),
+      tagStore.getTags(),
+      domainStore.getDomains()
     ])
   } catch (error: any) {
     // 提取详细错误信息
@@ -497,6 +596,20 @@ watch(
   margin-top: 0;
 }
 
+/* 标签和领域选择器样式 */
+.tag-selector,
+.domain-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
 /* 知识库列表样式 */
 .kb-list {
   display: grid;
@@ -550,6 +663,48 @@ watch(
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 标签和领域显示样式 */
+.kb-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.kb-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  margin-right: 8px;
+}
+
+.kb-tag {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+.kb-domains {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.kb-domain {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background-color: #f0f0f0;
+  color: #333;
+  margin-right: 8px;
+  margin-bottom: 8px;
 }
 
 .kb-stats {
@@ -613,6 +768,11 @@ watch(
   .modal-content {
     padding: 20px;
     margin: 20px;
+  }
+
+  .tag-selector,
+  .domain-selector {
+    max-height: 100px;
   }
 }
 </style>

@@ -60,8 +60,9 @@ async def chat(
     )
     db.add(user_message)
 
-    # 获取对话历史
-    history = await _get_conversation_history(db, conversation.id)
+    # 获取对话历史，使用context_round参数控制历史长度
+    limit = request.context_round * 2 if request.context_round else 10  # 每个轮次包含用户和助手的消息，所以乘以2
+    history = await _get_conversation_history(db, conversation.id, limit)
 
     # 如果提供了 model_id，从数据库获取模型详情
     model_name = request.model

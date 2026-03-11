@@ -13,6 +13,7 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = None
     top_k: Optional[int] = None
     stream: bool = False
+    context_round: Optional[int] = None
 
 
 class Citation(BaseModel):

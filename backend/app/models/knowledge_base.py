@@ -3,6 +3,8 @@ from datetime import datetime
 from sqlalchemy import String, Text, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.database import Base
+from backend.app.models.tag import knowledge_base_tag_association
+from backend.app.models.domain import knowledge_base_domain_association
 
 
 class KnowledgeBase(Base):
@@ -56,4 +58,14 @@ class KnowledgeBase(Base):
     owner = relationship("User", back_populates="knowledge_bases")
     documents = relationship(
         "Document", back_populates="knowledge_base", cascade="all, delete-orphan"
+    )
+    tags = relationship(
+        "Tag",
+        secondary=knowledge_base_tag_association,
+        back_populates="knowledge_bases"
+    )
+    domains = relationship(
+        "Domain",
+        secondary=knowledge_base_domain_association,
+        back_populates="knowledge_bases"
     )

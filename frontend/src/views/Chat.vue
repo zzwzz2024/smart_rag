@@ -64,32 +64,51 @@
 <!--          <h3>{{ chatStore.currentConversation ? '正在聊天' : '新对话' }}</h3>-->
           <h3>{{ chatStore.currentConversation ? `正在与${getConversationTitle(chatStore.currentConversation)}聊天` : '新对话' }}</h3>
           <div class="chat-actions">
-            <select
-              v-model="selectedKnowledgeBase"
-              class="kb-select"
-            >
-              <option value="">选择知识库</option>
-              <option
-                v-for="kb in kbStore.knowledgeBases"
-                :key="kb.id"
-                :value="kb.id"
+            <div class="select-with-label">
+              <label>会话轮次</label>
+              <select
+                v-model="contextRound"
+                class="context-select"
               >
-                {{ kb.name }}
-              </option>
-            </select>
-            <select
-              v-model="selectedModel"
-              class="model-select"
-            >
-              <option value="">选择模型</option>
-              <option
-                v-for="model in modelStore.chatModels"
-                :key="model.id"
-                :value="model.id"
+                <option value="2">2轮</option>
+                <option value="4">4轮</option>
+                <option value="6">6轮</option>
+                <option value="8">8轮</option>
+                <option value="10">10轮</option>
+              </select>
+            </div>
+            <div class="select-with-label">
+              <label>知识库</label>
+              <select
+                v-model="selectedKnowledgeBase"
+                class="kb-select"
               >
-                {{ model.name }}
-              </option>
-            </select>
+                <option value="">选择知识库</option>
+                <option
+                  v-for="kb in kbStore.knowledgeBases"
+                  :key="kb.id"
+                  :value="kb.id"
+                >
+                  {{ kb.name }}
+                </option>
+              </select>
+            </div>
+            <div class="select-with-label">
+              <label>模型</label>
+              <select
+                v-model="selectedModel"
+                class="model-select"
+              >
+                <option value="">选择模型</option>
+                <option
+                  v-for="model in modelStore.chatModels"
+                  :key="model.id"
+                  :value="model.id"
+                >
+                  {{ model.name }}
+                </option>
+              </select>
+            </div>
             <button
               class="btn btn-primary"
               @click="startNewConversation"
@@ -186,6 +205,7 @@ const modelStore = useModelStore()
 const inputMessage = ref('')
 const selectedKnowledgeBase = ref<string | ''>('')
 const selectedModel = ref<string | ''>('')
+const contextRound = ref<number>(4)
 
 // 对话重命名相关
 const editingConversationId = ref<string | null>(null)
@@ -288,7 +308,7 @@ const sendMessage = async () => {
     } else if (!modelId || typeof modelId !== 'string' || modelId.trim() === '') {
       ElMessage.error('请先选择一个模型，如果没有可用模型，请前往模型设置页面配置')
     } else {
-      await chatStore.sendMessage(message, kbId, modelId)
+      await chatStore.sendMessage(message, kbId, modelId, parseInt(contextRound.value.toString()))
       // 发送成功后清空输入
       inputMessage.value = ''
       // 滚动到聊天消息底部
@@ -645,12 +665,32 @@ body.dark-mode .chat-header-top {
   align-items: center;
 }
 
+.select-with-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.select-with-label label {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
+}
+
 .kb-select,
-.model-select {
+.model-select,
+.context-select {
   padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
+  min-width: 120px;
+}
+
+body.dark-mode .context-select {
+  background-color: #404040;
+  border: 1px solid #505050;
+  color: #e0e0e0;
 }
 
 /* 聊天消息列表 */
