@@ -29,11 +29,15 @@ class Generator:
     def __init__(self,api_key=None,base_url=None,model_name=None):
         self.clients = {}  # 存储不同模型的客户端
         print(f"Generator函数初始化")
-        self.default_client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=120.0
-        )
+        # 只有当api_key和base_url都不为None时，才创建默认客户端
+        if api_key and base_url:
+            self.default_client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=120.0
+            )
+        else:
+            self.default_client = None
         print(f"Generator函数初始化完成")
 
     def _get_or_create_client(self, model_id: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None, base_url: Optional[str] = None) -> AsyncOpenAI:
@@ -44,12 +48,13 @@ class Generator:
         client_key = model_id or model or "default"
         
         if client_key not in self.clients:
-            # 只使用传递的api_key，不再使用默认api_key
-            if not api_key:
-                raise ValueError("API key is required for model client creation")
-            # 只使用传递的base_url
-            if not base_url:
-                raise ValueError("Base URL is required for model client creation")
+            # 如果没有传递api_key和base_url，使用默认客户端
+            if not api_key or not base_url:
+                if self.default_client:
+                    return self.default_client
+                else:
+                    raise ValueError("API key and base URL are required for model client creation")
+            
             # 这里可以根据model_id从数据库获取模型配置
             # 例如，获取模型的base_url等
             self.clients[client_key] = AsyncOpenAI(
@@ -70,9 +75,11 @@ class Generator:
         """构建消息历史"""
         system_prompt = """你是一个严谨的智能问答助手，请严格遵循：
     - 仅基于用户提供的【参考信息】回答问题；
-    - 若参考信息中无相关内容，必须回复：“根据提供的信息，未检索到相关内容”；
+    - 仔细阅读参考信息中的内容，确保能够理解并提取相关信息；
+    - 若参考信息中包含与问题相关的内容，必须基于这些内容生成回答；
+    - 若参考信息中无相关内容，必须回复："根据提供的信息，未检索到相关内容"；
     - 禁止编造、推测或使用外部知识；
-    - 引用时请注明“参考信息 X”；
+    - 回答中不要包含任何参考信息的引用，直接给出答案即可；
     - 回答需简洁、准确、有条理。
     - 如果问你是谁，文档中没有相关内容，必须回复："我是你的智能检索助手"
     """
@@ -111,8 +118,9 @@ class Generator:
         start_time = time.time()
 
         if not model:
-            raise ValueError("Model is required for generation")
-        temperature = temperature or settings.LLM_TEMPERATURE
+            # 如果没有提供模型，使用默认模型
+            model = "gpt-3.5-turbo"
+        temperature = temperature or 0.7
 
         # 构造上下文
         context = self._build_context(retrieved_chunks)
@@ -129,7 +137,7 @@ class Generator:
                 messages= self._build_messages(query, context, conversation_history or []),
                 temperature=temperature,
                 top_p=top_p,
-                max_tokens=settings.LLM_MAX_TOKENS,
+                max_tokens=1000,
             )
 
             answer = response.choices[0].message.content
@@ -172,8 +180,15 @@ class Generator:
             return ""
 
         context_parts = []
-        for chunk in retrieved_chunks:
-            context_parts.append(f"参考信息 {chunk.chunk_id}:\n{chunk.content}\n---")
+        for i, chunk in enumerate(retrieved_chunks):
+            # 使用知识库名称而不是 ID
+            kb_name = chunk.metadata.get("kb_name", "知识库")
+            # 确保知识库名称是字符串
+            if not isinstance(kb_name, str):
+                kb_name = "知识库"
+            # 构建详细的参考信息，包含文件名和知识库名称
+            filename = chunk.metadata.get("filename", "未知文件")
+            context_parts.append(f"参考信息 {kb_name}（{filename}）:\n{chunk.content}\n---")
 
         return "\n".join(context_parts)
 

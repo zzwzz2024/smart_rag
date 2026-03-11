@@ -78,22 +78,6 @@
               </select>
             </div>
             <div class="select-with-label">
-              <label>知识库</label>
-              <select
-                v-model="selectedKnowledgeBase"
-                class="kb-select"
-              >
-                <option value="">选择知识库</option>
-                <option
-                  v-for="kb in kbStore.knowledgeBases"
-                  :key="kb.id"
-                  :value="kb.id"
-                >
-                  {{ kb.name }}
-                </option>
-              </select>
-            </div>
-            <div class="select-with-label">
               <label>模型</label>
               <select
                 v-model="selectedModel"
@@ -135,6 +119,9 @@
               }">
                 置信度: {{ Math.round(message.confidence * 100) }}%
               </div>
+              <button class="copy-button" @click="copyMessage(message.content)">
+                复制
+              </button>
             </div>
             <div v-if="message.role === 'assistant' && message.citations && message.citations.length > 0" class="citations">
               <h4>引用来源:</h4>
@@ -203,7 +190,6 @@ const kbStore = useKbStore()
 const modelStore = useModelStore()
 
 const inputMessage = ref('')
-const selectedKnowledgeBase = ref<string | ''>('')
 const selectedModel = ref<string | ''>('')
 const contextRound = ref<number>(4)
 
@@ -300,15 +286,12 @@ const sendMessage = async () => {
   const message = inputMessage.value.trim()
 
   try {
-    const kbId = selectedKnowledgeBase.value !== '' ? selectedKnowledgeBase.value : undefined
     const modelId = selectedModel.value !== '' ? selectedModel.value : undefined
 
-    if (!kbId || typeof kbId !== 'string' || kbId.trim() === '') {
-      ElMessage.error('请先选择一个知识库')
-    } else if (!modelId || typeof modelId !== 'string' || modelId.trim() === '') {
+    if (!modelId || typeof modelId !== 'string' || modelId.trim() === '') {
       ElMessage.error('请先选择一个模型，如果没有可用模型，请前往模型设置页面配置')
     } else {
-      await chatStore.sendMessage(message, kbId, modelId, parseInt(contextRound.value.toString()))
+      await chatStore.sendMessage(message, undefined, modelId, parseInt(contextRound.value.toString()))
       // 发送成功后清空输入
       inputMessage.value = ''
       // 滚动到聊天消息底部
@@ -340,7 +323,6 @@ const startNewConversation = () => {
   
   // 重置输入状态
   inputMessage.value = ''
-  selectedKnowledgeBase.value = ''
   selectedModel.value = ''
 }
 
@@ -361,40 +343,39 @@ const toggleDarkMode = () => {
   localStorage.setItem('darkMode', body.classList.contains('dark-mode') ? 'true' : 'false')
 }
 
-// 监听知识库选择变化
-watch(selectedKnowledgeBase, async (newKbId) => {
-  if (newKbId) {
-    try {
-      // 获取知识库详情
-      const kb = kbStore.knowledgeBases.find(k => k.id === newKbId)
-      if (kb) {
-        console.log('Selected knowledge base:', kb.name)
-        console.log('Embedding model ID:', kb.embedding_model_id)
-        console.log('Rerank model ID:', kb.rerank_model_id)
-        
-        // 根据知识库关联的模型初始化参数
-        // 示例：如果有默认的聊天模型，可以选择第一个可用的模型
-        if (modelStore.chatModels.length > 0 && !selectedModel.value) {
-          selectedModel.value = modelStore.chatModels[0].id
-        }
-        
-        // 调用后端API初始化模型，传递知识库关联的模型信息
-        if (selectedModel.value) {
-          console.log('初始化模型:', selectedModel.value)
-          // 调用后端API来初始化模型，传递知识库信息
-          await chatApi.initializeModel(selectedModel.value, {
-            kb_id: newKbId,
-            embedding_model_id: kb.embedding_model_id,
-            rerank_model_id: kb.rerank_model_id
-          })
-          console.log('模型初始化成功')
-        }
+// 复制消息内容
+const copyMessage = async (content: string) => {
+  try {
+    // 尝试使用现代的 Clipboard API
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(content)
+      ElMessage.success('复制成功')
+    } else {
+      // 降级到传统的复制方法
+      const textArea = document.createElement('textarea')
+      textArea.value = content
+      textArea.style.position = 'fixed'
+      textArea.style.left = '-999999px'
+      textArea.style.top = '-999999px'
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      try {
+        document.execCommand('copy')
+        ElMessage.success('复制成功')
+      } catch (err) {
+        ElMessage.error('复制失败，请手动复制')
+      } finally {
+        document.body.removeChild(textArea)
       }
-    } catch (error) {
-      console.error('获取知识库详情失败:', error)
     }
+  } catch (error) {
+    console.error('复制失败:', error)
+    ElMessage.error('复制失败，请手动复制')
   }
-})
+}
+
+
 
 // 监听模型选择变化
 watch(selectedModel, async (newModelId) => {
@@ -726,6 +707,40 @@ body.dark-mode .context-select {
   font-size: 14px;
   line-height: 1.5;
   margin-bottom: 8px;
+  position: relative;
+  padding-right: 60px; /* 为复制按钮留出空间 */
+}
+
+.copy-button {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background-color: rgba(0, 0, 0, 0.1);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+.chat-message:hover .copy-button {
+  opacity: 1;
+}
+
+.copy-button:hover {
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+body.dark-mode .copy-button {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .copy-button:hover {
+  background-color: rgba(255, 255, 255, 0.2);
 }
 
 .confidence-badge {

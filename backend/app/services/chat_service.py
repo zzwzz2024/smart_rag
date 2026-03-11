@@ -120,7 +120,7 @@ async def chat(
     global rag_pipeline
 
     # 如果本次请求指定了自定义模型（embedding 或 rerank），则创建新 pipeline 实例
-    if rag_pipeline is None and embedding_model is not None and rerank_model is not None:
+    if embedding_model is not None and rerank_model is not None:
         pipeline = RAGPipeline(
             api_key=api_key,
             base_url=base_url,
@@ -130,8 +130,13 @@ async def chat(
     else:
         # 复用全局已初始化的 rag_pipeline（由 api/chat.py 初始化）
         if rag_pipeline is None:
-            raise RuntimeError("全局 rag_pipeline 未初始化，请检查 api/chat.py 初始化逻辑")
-        pipeline = rag_pipeline
+            # 如果全局 rag_pipeline 未初始化，创建一个默认的
+            pipeline = RAGPipeline(
+                api_key=api_key,
+                base_url=base_url
+            )
+        else:
+            pipeline = rag_pipeline
 
     # 调用 pipeline.run
     result = await pipeline.run(
@@ -139,9 +144,9 @@ async def chat(
         kb_ids=request.kb_ids,
         conversation_history=history,
         model=model_name,
-        temperature=chat_model.temperature,
-        top_k=chat_model.top_k,
-        top_p=chat_model.top_p,
+        temperature=chat_model.temperature if chat_model else 0.7,
+        top_k=chat_model.top_k if chat_model else 4,
+        top_p=chat_model.top_p if chat_model else 0.95,
         api_key=api_key,
         base_url=base_url,
         db=db
