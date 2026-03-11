@@ -73,6 +73,7 @@
               <option value="smart">智能分块</option>
               <option value="line">按行分块</option>
               <option value="paragraph">按段落分块</option>
+              <option value="hierarchical">父子分块</option>
             </select>
           </div>
           <div class="form-group">
@@ -177,6 +178,7 @@
               <option value="smart">智能分块</option>
               <option value="line">按行分块</option>
               <option value="paragraph">按段落分块</option>
+              <option value="hierarchical">父子分块</option>
             </select>
           </div>
           <div class="form-group">
