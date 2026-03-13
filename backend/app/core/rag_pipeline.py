@@ -3,9 +3,9 @@ SmartRAG 全流程编排器
 Query → Retrieval → Rerank → Generation → Output
 """
 import json
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from loguru import logger
-
+from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.retriever import HybridRetriever, RetrievalResult
 from backend.app.core.reranker import Reranker
 from backend.app.core.generator import Generator, GenerationResult
@@ -18,10 +18,74 @@ settings = get_settings()
 class RAGPipeline:
     """RAG 全流程编排"""
 
-    def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None, rerank_model=None):
+    def __init__(self, api_key=None, base_url=None, model_name=None, embedding_model=None, rerank_model=None,db: AsyncSession = None):
         self.retriever = HybridRetriever(embedding_model=embedding_model)
-        self.reranker = Reranker(rerank_model=rerank_model)
-        self.generator = Generator(api_key,base_url,model_name)
+        self.reranker = Reranker(
+            rerank_model=rerank_model,
+            db = db
+        )  # 传递所有参数
+        self.generator = Generator(api_key, base_url, model_name)
+
+    async def _rewrite_query_with_llm(
+        self,
+        query: str,
+        domain: str = None,
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model_id: Optional[str] = None,
+    ) -> Tuple[str, List[str]]:
+        """
+        使用大模型进行查询改写和扩写
+        返回：(优化后的主查询，扩展查询列表)
+        """
+        system_prompt = f"""你是一个专业的查询改写助手，负责将用户的原始查询改写成更适合检索的形式，并生成相关的扩展查询。
+
+        任务要求：
+        1. 分析用户的原始查询，理解其意图
+        2. 生成一个优化后的主查询，使其更清晰、更具体，更适合检索
+        3. 生成3-5个相关的扩展查询，涵盖不同的表述方式、同义词、相关概念等
+        4. 扩展查询应该与原始查询意图相关，但使用不同的词汇和表达方式
+        5. 如果有领域信息，请结合领域知识进行改写和扩展
+        6. 输出格式必须严格按照以下JSON格式：
+        {{
+            "optimized_query": "优化后的主查询",
+            "expanded_queries": ["扩展查询1", "扩展查询2", "扩展查询3", ...]
+        }}
+
+        当前领域：{domain or "通用"}
+        """
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"原始查询：{query}"}
+        ]
+
+        try:
+            # 获取或创建模型客户端
+            client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
+            
+            response = await client.chat.completions.create(
+                model=model or "gpt-3.5-turbo",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=500,
+                response_format={"type": "json_object"}
+            )
+
+            import json
+            result = json.loads(response.choices[0].message.content)
+            optimized_query = result.get("optimized_query", query)
+            expanded_queries = result.get("expanded_queries", [])
+            
+            logger.info(f"[RAG] LLM optimized query: {optimized_query}")
+            logger.info(f"[RAG] LLM expanded queries: {expanded_queries}")
+            
+            return optimized_query, expanded_queries
+        except Exception as e:
+            logger.error(f"LLM query rewriting failed: {e}")
+            # 失败时回退到原始查询
+            return query, []
 
     async def run(
         self,
@@ -38,24 +102,46 @@ class RAGPipeline:
         retrieval_mode: str = "hybrid",
         use_llm: bool = True,
         db = None,
+        domain: str = None,  # 新增领域参数
     ) -> GenerationResult:
         """
         执行完整 RAG 流程
 
-        Stage 1: 检索 (Retrieval)
-        Stage 2: 重排序 (Reranking)
-        Stage 3: 过滤 (Filtering)
-        Stage 4: 生成 (Generation)
+        Stage 1: 查询改写扩写 (Query Rewriting)
+        Stage 2: 检索 (Retrieval)
+        Stage 3: 重排序 (Reranking)
+        Stage 4: 过滤 (Filtering)
+        Stage 5: 生成 (Generation)
         """
         top_k = top_k or settings.RERANK_TOP_K
 
-        # ── Stage 1: 混合检索 ──
-        logger.info(f"[RAG] Stage 1: Retrieval - query='{query[:50]}'")
+        # ── Stage 1: 查询改写扩写 ──
+        processed_query = query
+        if settings.ENABLE_QUERY_REWRITE:
+            logger.info(f"[RAG] Stage 1: Query Rewriting - original query='{query[:50]}'")
+            # 使用大模型进行查询改写和扩写
+            processed_query, expanded_queries = await self._rewrite_query_with_llm(
+                query=query,
+                domain=domain,
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+                model_id=model_id
+            )
+            logger.info(f"[RAG] Processed query: {processed_query}")
+            if expanded_queries:
+                logger.info(f"[RAG] Expanded queries: {expanded_queries[:3]}")
+        else:
+            logger.info(f"[RAG] Query rewriting disabled")
+
+        # ── Stage 2: 混合检索 ──
+        logger.info(f"[RAG] Stage 2: Retrieval - query='{processed_query[:50]}', domain={domain}")
         retrieved = await self.retriever.retrieve(
-            query=query,
+            query=processed_query,
             kb_ids=kb_ids,
             top_k=settings.RETRIEVAL_TOP_K,
             mode=retrieval_mode,
+            domain=domain,  # 传递领域参数
         )
         logger.info(f"[RAG] Retrieved {len(retrieved)} chunks")
 
@@ -73,22 +159,30 @@ class RAGPipeline:
                 base_url=base_url
             )
 
-        # ── Stage 2: 重排序 ──
-        logger.info(f"[RAG] Stage 2: Reranking top {top_k}")
-        reranked = await self.reranker.rerank(
-            query=query,
-            results=retrieved,
-            top_k=top_k,
-        )
+        # ── Stage 3: 重排序 ──
+        filtered = retrieved
+        if settings.ENABLE_RERANK:
+            logger.info(f"[RAG] Stage 3: Reranking top {top_k}")
+            reranked = await self.reranker.rerank(
+                query=processed_query,
+                results=retrieved,
+                top_k=top_k,
+            )
 
-        # ── Stage 3: 相关性过滤 ──
-        filtered = [
-            r for r in reranked
-            if r.score >= settings.SIMILARITY_THRESHOLD
-        ]
-        if not filtered:
-            logger.warning("[RAG] All results below threshold, using top result")
-            filtered = reranked[:1]
+            # ── Stage 4: 相关性过滤 ──
+            # 降低阈值以提高召回率
+            threshold = settings.SIMILARITY_THRESHOLD * 0.8
+            filtered = [
+                r for r in reranked
+                if r.score >= threshold
+            ]
+            if not filtered:
+                logger.warning("[RAG] All results below threshold, using top result")
+                filtered = reranked[:3]  # 使用前3个结果
+        else:
+            logger.info("[RAG] Reranking disabled, using top results directly")
+            # 直接使用检索结果的前top_k个
+            filtered = retrieved[:top_k]
 
         logger.info(f"[RAG] After filtering: {len(filtered)} chunks")
         if use_llm:
@@ -162,23 +256,49 @@ class RAGPipeline:
         temperature: Optional[float] = None,
         top_k: Optional[int] = None,
         retrieval_mode: str = "hybrid",
+        domain: str = None,  # 新增领域参数
     ):
         """流式 RAG"""
         top_k = top_k or settings.RERANK_TOP_K
 
-        # 检索 + 重排序
+        # ── 查询改写扩写 ──
+        processed_query = query
+        if settings.ENABLE_QUERY_REWRITE:
+            logger.info(f"[RAG Stream] Query Rewriting - original query='{query[:50]}'")
+            # 使用大模型进行查询改写和扩写
+            processed_query, expanded_queries = await self._rewrite_query_with_llm(
+                query=query,
+                domain=domain,
+                model=model,
+                api_key=api_key,
+                model_id=model_id
+            )
+            logger.info(f"[RAG Stream] Processed query: {processed_query}")
+        else:
+            logger.info(f"[RAG Stream] Query rewriting disabled")
+
+        # 检索
         retrieved = await self.retriever.retrieve(
-            query=query, kb_ids=kb_ids,
+            query=processed_query, kb_ids=kb_ids,
             top_k=settings.RETRIEVAL_TOP_K, mode=retrieval_mode,
+            domain=domain,  # 传递领域参数
         )
 
-        reranked = await self.reranker.rerank(
-            query=query, results=retrieved, top_k=top_k,
-        ) if retrieved else []
+        # 重排序
+        filtered = retrieved
+        if settings.ENABLE_RERANK:
+            logger.info(f"[RAG Stream] Reranking top {top_k}")
+            reranked = await self.reranker.rerank(
+                query=processed_query, results=retrieved, top_k=top_k,
+            ) if retrieved else []
 
-        filtered = [
-            r for r in reranked if r.score >= settings.SIMILARITY_THRESHOLD
-        ] or reranked[:1]
+            filtered = [
+                r for r in reranked if r.score >= settings.SIMILARITY_THRESHOLD
+            ] or reranked[:1]
+        else:
+            logger.info("[RAG Stream] Reranking disabled, using top results directly")
+            # 直接使用检索结果的前top_k个
+            filtered = retrieved[:top_k] if retrieved else []
 
         # 流式生成
         async for token in self.generator.generate_stream(

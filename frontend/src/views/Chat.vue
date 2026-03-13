@@ -77,22 +77,6 @@
                 <option value="10">10轮</option>
               </select>
             </div>
-            <div class="select-with-label">
-              <label>模型</label>
-              <select
-                v-model="selectedModel"
-                class="model-select"
-              >
-                <option value="">选择模型</option>
-                <option
-                  v-for="model in modelStore.chatModels"
-                  :key="model.id"
-                  :value="model.id"
-                >
-                  {{ model.name }}
-                </option>
-              </select>
-            </div>
             <button
               class="btn btn-primary"
               @click="startNewConversation"
@@ -190,7 +174,7 @@ const kbStore = useKbStore()
 const modelStore = useModelStore()
 
 const inputMessage = ref('')
-const selectedModel = ref<string | ''>('')
+
 const contextRound = ref<number>(4)
 
 // 对话重命名相关
@@ -286,17 +270,11 @@ const sendMessage = async () => {
   const message = inputMessage.value.trim()
 
   try {
-    const modelId = selectedModel.value !== '' ? selectedModel.value : undefined
-
-    if (!modelId || typeof modelId !== 'string' || modelId.trim() === '') {
-      ElMessage.error('请先选择一个模型，如果没有可用模型，请前往模型设置页面配置')
-    } else {
-      await chatStore.sendMessage(message, undefined, modelId, parseInt(contextRound.value.toString()))
-      // 发送成功后清空输入
-      inputMessage.value = ''
-      // 滚动到聊天消息底部
-      scrollToBottom()
-    }
+    // 发送前清空输入框
+    inputMessage.value = ''
+    await chatStore.sendMessage(message, undefined, undefined, parseInt(contextRound.value.toString()))
+    // 滚动到聊天消息底部
+    scrollToBottom()
   } catch (error: any) {
     // 提取详细错误信息
     const errorMessage = error.response?.data?.detail || '发送消息失败'
@@ -323,7 +301,6 @@ const startNewConversation = () => {
   
   // 重置输入状态
   inputMessage.value = ''
-  selectedModel.value = ''
 }
 
 // 滚动到聊天消息底部
@@ -377,23 +354,7 @@ const copyMessage = async (content: string) => {
 
 
 
-// 监听模型选择变化
-watch(selectedModel, async (newModelId) => {
-  if (newModelId) {
-    try {
-      // 从modelStore中获取模型详情
-      const model = modelStore.chatModels.find(m => m.id === newModelId)
-      if (model) {
-        console.log('初始化模型:', model.name)
-        // 调用后端API来初始化模型
-        await chatApi.initializeModel(newModelId)
-        console.log('模型初始化成功')
-      }
-    } catch (error) {
-      console.error('初始化模型失败:', error)
-    }
-  }
-})
+
 
 // 监听消息列表变化，自动滚动到最底部
 watch(() => chatStore.messages.length, () => {

@@ -3,7 +3,6 @@
 """
 import os
 import uuid
-from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +19,7 @@ from backend.app.config import get_settings
 import backend.app.services.chat_service as chat_service
 from backend.app.core.rag_pipeline import RAGPipeline
 from backend.app.models.response_model import Response
+from loguru import logger
 
 router = APIRouter()
 settings = get_settings()

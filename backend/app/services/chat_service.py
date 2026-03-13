@@ -1,13 +1,11 @@
 """
 对话服务
 """
-import uuid
 from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from loguru import logger
-
-from backend.app.core.embedder import EmbeddingService
 from backend.app.models.conversation import Conversation, Message
 from backend.app.models.model import Model
 from backend.app.core.rag_pipeline import RAGPipeline
@@ -65,26 +63,16 @@ async def chat(
     history = await _get_conversation_history(db, conversation.id, limit)
 
     # 如果提供了 model_id，从数据库获取模型详情
-    model_name = request.model
-    api_key = ""
-    base_url = ""
     embedding_model = None
     rerank_model = None
-    chat_model = None
-    
-    if request.model_id:
-        try:
-            model_result = await db.execute(
-                select(Model).where(Model.id == request.model_id, Model.is_active == True)
-            )
-            model = model_result.scalar_one_or_none()
-            if model:
-                model_name = model.model
-                api_key = model.api_key
-                base_url = model.base_url
-                chat_model = model
-        except Exception as e:
-            logger.error(f"Failed to fetch model: {e}")
+
+    result = await db.execute(
+        select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
+    )
+    chat_model = result.scalar_one_or_none()
+    api_key = chat_model.api_key
+    base_url = chat_model.base_url
+    model_name = chat_model.name
     
     # 如果提供了知识库ID，从数据库获取知识库关联的模型详情
     if request.kb_ids:
@@ -125,7 +113,8 @@ async def chat(
             api_key=api_key,
             base_url=base_url,
             embedding_model=embedding_model,
-            rerank_model=rerank_model
+            rerank_model=rerank_model,
+            db = db
         )
     else:
         # 复用全局已初始化的 rag_pipeline（由 api/chat.py 初始化）
@@ -138,6 +127,28 @@ async def chat(
         else:
             pipeline = rag_pipeline
 
+    # 获取领域信息
+    domain = None
+    if request.kb_ids:
+        try:
+            from backend.app.models.knowledge_base import KnowledgeBase
+            from backend.app.models.domain import Domain
+            
+            # 获取第一个知识库的详情
+            kb_result = await db.execute(
+                select(KnowledgeBase).options(
+                    selectinload(KnowledgeBase.domains)
+                ).where(KnowledgeBase.id == request.kb_ids[0])
+            )
+            kb = kb_result.scalar_one_or_none()
+            
+            if kb and kb.domains:
+                # 使用第一个领域作为主要领域
+                domain = kb.domains[0].name
+                logger.info(f"知识库 {kb.name} 关联领域: {domain}")
+        except Exception as e:
+            logger.error(f"获取领域信息失败: {e}")
+
     # 调用 pipeline.run
     result = await pipeline.run(
         query=request.query,
@@ -149,7 +160,8 @@ async def chat(
         top_p=chat_model.top_p if chat_model else 0.95,
         api_key=api_key,
         base_url=base_url,
-        db=db
+        db=db,
+        domain=domain  # 传递领域参数
     )
 
     # 保存 AI 回复

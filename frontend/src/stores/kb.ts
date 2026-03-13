@@ -115,7 +115,8 @@ export const useKbStore = defineStore('kb', {
       try {
         const response = await documentApi.getDocuments(kbId, params)
         console.log('获取文档列表成功', response)
-        const result = response.data.data || response
+        // 由于响应拦截器已经处理了响应格式，response 已经是 data.data
+        const result = response
         // 使用 $patch 方法更新状态，确保响应式
         this.$patch({
           documents: result.data || [],

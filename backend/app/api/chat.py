@@ -32,8 +32,17 @@ async def chat(
     user: User = Depends(get_current_user),
 ):
     """发送聊天消息"""
-    if not request.model_id:
-        raise HTTPException(400, "请选择一个模型，如果没有可用模型，请前往模型设置页面配置")
+    # 自动获取默认的聊天模型
+    # result = await db.execute(
+    #     select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
+    # )
+    # chat_model = result.scalar_one_or_none()
+    #
+    # if not chat_model:
+    #     raise HTTPException(400, "请先前往模型管理设置默认聊天模型")
+    #
+    # # 设置默认模型ID
+    # request.model_id = chat_model.id
 
     # 实现意图识别和知识库匹配
     from backend.app.services.intent_service import IntentService
@@ -58,8 +67,17 @@ async def chat_stream(
     if not request.kb_ids:
         raise HTTPException(400, "请选择至少一个知识库")
     
-    if not request.model_id:
-        raise HTTPException(400, "请选择一个模型，如果没有可用模型，请前往模型设置页面配置")
+    # 自动获取默认的聊天模型
+    result = await db.execute(
+        select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
+    )
+    chat_model = result.scalar_one_or_none()
+    
+    if not chat_model:
+        raise HTTPException(400, "请先前往模型管理设置默认聊天模型")
+    
+    # 设置默认模型ID
+    request.model_id = chat_model.id
 
     from backend.app.core.rag_pipeline import RAGPipeline
     pipeline = RAGPipeline()

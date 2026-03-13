@@ -79,10 +79,13 @@ class EmbeddingService:
         """使用 OpenAI API"""
         logger.info(f"_embed_openai开始")
         all_embeddings = []
-        batch_size = 50
+        batch_size = 25  # API 限制批量大小不能超过 25
+        max_length = 2048  # API 限制输入长度不能超过 2048 个 token
 
         for i in range(0, len(texts), batch_size):
             batch = texts[i: i + batch_size]
+            # 限制每个文本的长度
+            batch = [text[:max_length] for text in batch]
             response = await self.client.embeddings.create(
                 model=self.model,
                 input=batch,

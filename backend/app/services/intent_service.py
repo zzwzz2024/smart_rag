@@ -4,9 +4,9 @@
 from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from backend.app.models.knowledge_base import KnowledgeBase
-from backend.app.models.tag import Tag
-from backend.app.models.domain import Domain
+from loguru import logger
 
 
 class IntentService:
@@ -146,7 +146,13 @@ class IntentService:
                     "tags": tags,
                     "domains": domains
                 })
-            
+
+            # 格式化为易读的文本
+            kb_text = "\n".join([
+                f"- ID: {kb['id']}, 名称：{kb['name']}, 描述：{kb['description']}, 标签：{', '.join(kb['tags'])}, 领域：{', '.join(kb['domains'])}"
+                for kb in kb_info
+            ])
+
             # 构建提示词
             prompt = f"""
             你是一个智能助手，需要根据用户的查询和知识库信息，匹配最相关的知识库。
@@ -154,11 +160,49 @@ class IntentService:
             用户查询:
             {query}
             
-            可用知识库:
-            {kb_info}
+            ## 可用知识库列表
+            {kb_text}
             
-            请分析用户查询的意图，然后返回最相关的知识库ID列表，按相关性从高到低排序。
-            只返回知识库ID，每个ID占一行，不要包含其他内容。
+            ## 匹配规则
+            1. 优先匹配知识库**名称**包含查询关键词的知识库
+            2. 其次匹配**标签**或**领域**包含查询关键词的知识库
+            3. 对于音乐奖项查询（如金曲奖、 Grammy 等），优先匹配包含音乐、娱乐、明星等相关标签的知识库
+            4. 对于特定歌手的查询（如周杰伦、 Taylor Swift 等），优先匹配包含音乐、明星等相关标签的知识库
+            5. 如果都不匹配，返回空列表
+            
+            ## 输出格式要求
+            - 只返回知识库 ID，每行一个
+            - 不要包含任何解释、说明或其他文字
+            - 如果没有匹配的知识库，返回 "NONE"
+            
+            ## 示例
+            示例 1:
+            用户查询："周杰伦的音乐"
+            知识库列表:
+            - ID: kb1, 名称：音乐知识库，标签：['音乐', '流行']
+            - ID: kb2, 名称：科技知识库，标签：['科技', 'AI']
+            正确输出:
+            kb1
+            
+            示例 2:
+            用户查询："周杰伦第20届台湾金曲奖"
+            知识库列表:
+            - ID: kb1, 名称：音乐知识库，标签：['音乐', '明星']
+            - ID: kb2, 名称：体育知识库，标签：['体育']
+            正确输出:
+            kb1
+            
+            示例 3:
+            用户查询："量子力学"
+            知识库列表:
+            - ID: kb1, 名称：音乐知识库，标签：['音乐']
+            - ID: kb2, 名称：历史知识库，标签：['历史']
+            正确输出:
+            NONE
+            
+            ## 开始匹配
+            用户查询：{query}
+            请返回匹配的知识库 ID（只返回 ID，每行一个）：
             """
             
             # 使用大模型生成匹配结果
@@ -169,15 +213,25 @@ class IntentService:
             response = await generator.generate(
                 query=prompt,
                 retrieved_chunks=[],
-                conversation_history=[],
-                model=chat_model.model
+                model=chat_model.model,
+                temperature=0.1
             )
             
             # 解析大模型的响应
             kb_ids = []
-            for line in response.answer.strip().split('\n'):
+            answer = response.answer.strip()
+            # 检查是否返回 NONE
+            if answer == "NONE" or "没有匹配" in answer or "无法匹配" in answer:
+                logger.info("大模型判断没有匹配的知识库")
+                keywords = self._extract_keywords(query)
+                matched_kbs = await self._match_kbs(kbs, keywords)
+                logger.info(f"使用关键词匹配兜底，匹配到的知识库:{matched_kbs}")
+                return matched_kbs
+
+            # 提取 ID（每行一个）
+            for line in answer.split('\n'):
                 line = line.strip()
-                if line:
+                if line and line not in ["NONE", "无", "没有"]:
                     kb_ids.append(line)
             
             # 根据大模型返回的ID列表，构建匹配的知识库列表
@@ -192,13 +246,16 @@ class IntentService:
             if not matched_kbs:
                 keywords = self._extract_keywords(query)
                 matched_kbs = await self._match_kbs(kbs, keywords)
+                logger.info(f"匹配到的知识库:{matched_kbs}")
             
             return matched_kbs
         except Exception as e:
             # 如果使用大模型失败，使用关键词匹配作为兜底
-            print(f"使用大模型进行意图识别失败: {e}")
+            logger.error(f"使用大模型进行意图识别失败: {e}")
             keywords = self._extract_keywords(query)
-            return await self._match_kbs(kbs, keywords)
+            matched_kbs = await self._match_kbs(kbs, keywords)
+            logger.info(f"使用关键词匹配作为兜底，匹配到的知识库:{matched_kbs}")
+            return matched_kbs
 
     async def _calculate_match_score(self, kb: KnowledgeBase, keywords: List[str]) -> float:
         """
@@ -234,7 +291,3 @@ class IntentService:
                     score += 0.6
         
         return score
-
-
-# 导入selectinload
-from sqlalchemy.orm import selectinload
