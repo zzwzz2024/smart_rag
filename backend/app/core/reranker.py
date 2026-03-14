@@ -1,12 +1,8 @@
 """
 SmartRAG 重排序器
-支持: LLM-based Reranking / Cross-Encoder (本地)
+支持：Qwen Rerank API / LLM-based Reranking / 多厂商支持
 """
-"""
-SmartRAG 重排序器
-支持：Qwen Rerank API / LLM-based Reranking
-"""
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import httpx
 from openai import AsyncOpenAI
 from loguru import logger
@@ -15,19 +11,57 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.retriever import RetrievalResult
 from backend.app.config import get_settings
 from backend.app.models.model import Model
+from backend.app.core.base_reranker import BaseReranker
+from backend.app.core.rerank_models import QwenReranker, ZhipuReranker, DeepSeekReranker, GPTReranker
 
 settings = get_settings()
+
+
+def get_reranker_by_provider(provider: str, api_key: str, model_name: str, **kwargs) -> BaseReranker:
+    """Get reranker by provider"""
+    provider_map = {
+        "qwen": QwenReranker,
+        "zhipu": ZhipuReranker,
+        "deepseek": DeepSeekReranker,
+        "gpt": GPTReranker,
+        "openai": GPTReranker
+    }
+    
+    provider_lower = provider.lower()
+    reranker_class = provider_map.get(provider_lower)
+    
+    if not reranker_class:
+        raise ValueError(f"Unsupported rerank provider: {provider}")
+    
+    return reranker_class(api_key=api_key, model_name=model_name, **kwargs)
 
 
 class Reranker:
     """重排序器"""
 
-    def __init__(self, api_key=None, base_url=None, model_name=None, rerank_model=None, db: AsyncSession = None):
+    def _infer_provider(self, model_name: str) -> str:
+        """从模型名称中推断provider"""
+        model_name_lower = model_name.lower()
+        if "qwen" in model_name_lower:
+            return "qwen"
+        elif "zhipu" in model_name_lower or "glm" in model_name_lower:
+            return "zhipu"
+        elif "deepseek" in model_name_lower:
+            return "deepseek"
+        elif "gpt" in model_name_lower or "openai" in model_name_lower:
+            return "gpt"
+        return None
+
+    def __init__(self, api_key=None, base_url=None, model_name=None, rerank_model=None, db: AsyncSession = None, provider=None):
         self.rerank_config = None
+        self.provider = provider
 
         # 如果提供了 rerank_model，使用它的配置
         if rerank_model:
             self.rerank_config = rerank_model
+            # 从模型配置中提取provider信息
+            if not self.provider:
+                self.provider = self._infer_provider(rerank_model.model)
         elif db is not None:
             result = db.execute(
                 select(Model).where(
@@ -40,6 +74,9 @@ class Reranker:
             if rerank_model_from_db:
                 logger.info(f"从数据库加载 rerank 模型：{rerank_model_from_db.name}")
                 self.rerank_config = rerank_model_from_db
+                # 从模型配置中提取provider信息
+                if not self.provider:
+                    self.provider = self._infer_provider(rerank_model_from_db.model)
 
         # 初始化 OpenAI client 用于 LLM-based rerank
         if self.rerank_config and self.rerank_config.api_key:
@@ -52,6 +89,20 @@ class Reranker:
         else:
             self.client = None
             self.model_name = None
+
+        # 初始化厂商特定的reranker
+        self.provider_reranker = None
+        if self.rerank_config and self.rerank_config.api_key and self.provider:
+            try:
+                self.provider_reranker = get_reranker_by_provider(
+                    provider=self.provider,
+                    api_key=self.rerank_config.api_key,
+                    model_name=self.rerank_config.model
+                )
+                logger.info(f"初始化 {self.provider} rerank 模型：{self.rerank_config.model}")
+            except Exception as e:
+                logger.error(f"初始化厂商rerank模型失败：{e}")
+                self.provider_reranker = None
 
     async def rerank(
             self,
@@ -69,10 +120,17 @@ class Reranker:
             return results
 
         try:
-            reranked = await self._cross_encoder_rerank(query, results, top_k)
-            return reranked
+            # 优先使用厂商特定的reranker
+            if self.provider_reranker:
+                logger.info(f"使用 {self.provider} rerank 模型")
+                reranked = await self._provider_rerank(query, results, top_k)
+                return reranked
+            else:
+                # 回退到原来的Qwen rerank
+                reranked = await self._cross_encoder_rerank(query, results, top_k)
+                return reranked
         except Exception as e:
-            logger.error(f"Cross-Encoder rerank 失败：{e}")
+            logger.error(f"厂商rerank失败：{e}")
             try:
                 logger.info("降级到 LLM-based rerank")
                 return await self._llm_rerank(query, results, top_k)
@@ -92,34 +150,26 @@ class Reranker:
             raise ValueError("未配置 rerank 模型")
 
         try:
+            # 创建Qwen reranker实例
+            qwen_reranker = QwenReranker(
+                api_key=self.rerank_config.api_key,
+                model_name=self.rerank_config.model
+            )
+
             documents = [r.content for r in results[:15]]
+            reranked_docs = await qwen_reranker.rerank(query, documents, top_k=len(documents))
 
-            # 调用 Qwen Rerank API
-            response_data = await self._call_qwen_rerank_api(query, documents)
+            # 构建分数映射
+            score_map = {}
+            for doc in reranked_docs:
+                score_map[doc.get("index")] = doc.get("score", 0)
 
-            # 解析结果
-            scores = []
-            for result_item in response_data.get("results", []):
-                index = result_item.get("index", 0)
-                score = result_item.get("relevance_score", 0)
-                scores.append((index, score))
-
-            # 按原始索引顺序排列分数
-            ordered_scores = [0] * len(documents)
-            for idx, score in scores:
-                if idx < len(ordered_scores):
-                    ordered_scores[idx] = score
-
-            logger.info(f"Qwen Rerank 完成，前 5 个分数：{ordered_scores[:5]}")
+            logger.info(f"Qwen Rerank 完成，前 5 个分数：{list(score_map.values())[:5]}")
 
             # 合并分数
             scored_results = []
             for i, result in enumerate(results[:15]):
-                if i < len(ordered_scores):
-                    rerank_score = float(ordered_scores[i])
-                else:
-                    rerank_score = result.score
-
+                rerank_score = score_map.get(i, result.score)
                 combined = 0.3 * result.score + 0.7 * rerank_score
                 result.score = combined
                 scored_results.append(result)
@@ -127,39 +177,47 @@ class Reranker:
             scored_results.sort(key=lambda x: x.score, reverse=True)
             return scored_results[:top_k]
 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Qwen Rerank API HTTP 错误：{e.response.status_code} - {e.response.text}")
-            raise
         except Exception as e:
             logger.error(f"Qwen Rerank 失败：{e}")
             raise
 
-    async def _call_qwen_rerank_api(self, query: str, documents: List[str]) -> dict:
-        """调用 Qwen (DashScope) Rerank API"""
-        # DashScope API 地址 - 正确的路径
-        dashscope_api_url = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
+    async def _provider_rerank(
+            self,
+            query: str,
+            results: List[RetrievalResult],
+            top_k: int,
+    ) -> List[RetrievalResult]:
+        """使用厂商特定的rerank模型进行重排序"""
+        if not self.provider_reranker:
+            raise ValueError("未初始化厂商rerank模型")
 
-        headers = {
-            "Authorization": f"Bearer {self.rerank_config.api_key}",
-            "Content-Type": "application/json"
-        }
+        try:
+            documents = [r.content for r in results[:15]]
 
-        data = {
-            "model": self.rerank_config.model or "gte-rerank-v2",
-            "input": {
-                "query": query,
-                "documents": documents
-            },
-            "parameters": {
-                "return_documents": True,
-                "top_n": len(documents)
-            }
-        }
+            # 调用厂商特定的rerank模型
+            reranked_docs = await self.provider_reranker.rerank(query, documents, top_k=len(documents))
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(dashscope_api_url, json=data, headers=headers)
-            response.raise_for_status()
-            return response.json()
+            # 构建分数映射
+            score_map = {}
+            for doc in reranked_docs:
+                score_map[doc.get("index")] = doc.get("score", 0)
+
+            logger.info(f"{self.provider} Rerank 完成，前 5 个分数：{list(score_map.values())[:5]}")
+
+            # 合并分数
+            scored_results = []
+            for i, result in enumerate(results[:15]):
+                rerank_score = score_map.get(i, result.score)
+                combined = 0.3 * result.score + 0.7 * rerank_score
+                result.score = combined
+                scored_results.append(result)
+
+            scored_results.sort(key=lambda x: x.score, reverse=True)
+            return scored_results[:top_k]
+
+        except Exception as e:
+            logger.error(f"厂商rerank失败：{e}")
+            raise
 
     async def _llm_rerank(
             self,

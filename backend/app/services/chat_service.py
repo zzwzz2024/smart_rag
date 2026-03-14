@@ -20,6 +20,48 @@ def get_rag_pipeline(api_key=None, base_url=None):
         rag_pipeline = RAGPipeline(api_key=api_key, base_url=base_url)
     return rag_pipeline
 
+
+def initialize_rag_pipeline(model_id, kb_id=None, embedding_model_id=None, rerank_model_id=None, db=None):
+    """初始化RAG pipeline"""
+    global rag_pipeline
+    
+    # 从数据库获取模型详情
+    result = db.execute(
+        select(Model).where(Model.id == model_id, Model.is_active == True)
+    )
+    model = result.scalar_one_or_none()
+    if not model:
+        raise ValueError("模型不存在或未激活")
+
+    # 初始化模型变量
+    embedding_model = None
+    rerank_model = None
+
+    # 如果提供了embedding_model_id，从数据库获取embedding模型详情
+    if embedding_model_id:
+        embedding_result = db.execute(
+            select(Model).where(Model.id == embedding_model_id, Model.is_active == True)
+        )
+        embedding_model = embedding_result.scalar_one_or_none()
+
+    # 如果提供了rerank_model_id，从数据库获取rerank模型详情
+    if rerank_model_id:
+        rerank_result = db.execute(
+            select(Model).where(Model.id == rerank_model_id, Model.is_active == True)
+        )
+        rerank_model = rerank_result.scalar_one_or_none()
+
+    # 初始化RAG pipeline，传递模型详情
+    # 不传递provider参数，让Rerank类自己从模型名称中推断
+    rag_pipeline = RAGPipeline(
+        api_key=model.api_key,
+        base_url=model.base_url,
+        embedding_model=embedding_model,
+        rerank_model=rerank_model
+    )
+    
+    return model
+
 async def chat(
     db: AsyncSession,
     request: ChatRequest,
@@ -104,9 +146,6 @@ async def chat(
         except Exception as e:
             logger.error(f"Failed to fetch knowledge base models: {e}")
 
-    # 替换原 L117-L127 块为：
-    global rag_pipeline
-
     # 如果本次请求指定了自定义模型（embedding 或 rerank），则创建新 pipeline 实例
     if embedding_model is not None and rerank_model is not None:
         pipeline = RAGPipeline(
@@ -128,26 +167,7 @@ async def chat(
             pipeline = rag_pipeline
 
     # 获取领域信息
-    domain = None
-    if request.kb_ids:
-        try:
-            from backend.app.models.knowledge_base import KnowledgeBase
-            from backend.app.models.domain import Domain
-            
-            # 获取第一个知识库的详情
-            kb_result = await db.execute(
-                select(KnowledgeBase).options(
-                    selectinload(KnowledgeBase.domains)
-                ).where(KnowledgeBase.id == request.kb_ids[0])
-            )
-            kb = kb_result.scalar_one_or_none()
-            
-            if kb and kb.domains:
-                # 使用第一个领域作为主要领域
-                domain = kb.domains[0].name
-                logger.info(f"知识库 {kb.name} 关联领域: {domain}")
-        except Exception as e:
-            logger.error(f"获取领域信息失败: {e}")
+    domain = await _get_domain_from_kb(db, request.kb_ids)
 
     # 调用 pipeline.run
     result = await pipeline.run(
@@ -236,3 +256,74 @@ async def _get_conversation_history(
         {"role": m.role, "content": m.content}
         for m in messages
     ]
+
+
+async def _get_domain_from_kb(
+    db: AsyncSession,
+    kb_ids: List[str]
+) -> Optional[str]:
+    """从知识库获取领域信息"""
+    if not kb_ids:
+        return None
+    
+    try:
+        from backend.app.models.knowledge_base import KnowledgeBase
+        from backend.app.models.domain import Domain
+        
+        # 获取第一个知识库的详情
+        kb_result = await db.execute(
+            select(KnowledgeBase).options(
+                selectinload(KnowledgeBase.domains)
+            ).where(KnowledgeBase.id == kb_ids[0])
+        )
+        kb = kb_result.scalar_one_or_none()
+        
+        if kb and kb.domains:
+            # 使用第一个领域作为主要领域
+            domain = kb.domains[0].name
+            logger.info(f"知识库 {kb.name} 关联领域: {domain}")
+            return domain
+    except Exception as e:
+        logger.error(f"获取领域信息失败: {e}")
+    
+    return None
+
+
+async def chat_stream(
+    db: AsyncSession,
+    request: ChatRequest,
+    user_id: str,
+):
+    """处理流式聊天请求"""
+    if not request.kb_ids:
+        raise ValueError("请选择至少一个知识库")
+    
+    # 自动获取默认的聊天模型
+    result = await db.execute(
+        select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
+    )
+    chat_model = result.scalar_one_or_none()
+    
+    if not chat_model:
+        raise ValueError("请先前往模型管理设置默认聊天模型")
+    
+    # 设置默认模型ID
+    request.model_id = chat_model.id
+
+    # 获取或创建RAG pipeline
+    pipeline = get_rag_pipeline(
+        api_key=chat_model.api_key,
+        base_url=chat_model.base_url
+    )
+
+    # 获取领域信息
+    domain = await _get_domain_from_kb(db, request.kb_ids)
+
+    # 执行流式聊天
+    async for token in pipeline.run_stream(
+        query=request.query,
+        kb_ids=request.kb_ids,
+        model_id=request.model_id,
+        domain=domain
+    ):
+        yield token

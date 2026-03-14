@@ -7,9 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from backend.app.core.rag_pipeline import RAGPipeline
-from backend.app.models.model import Model
 from backend.app.database import get_db
 from backend.app.models.user import User
 from backend.app.models.conversation import Conversation, Message, Feedback
@@ -53,37 +50,20 @@ async def chat_stream(
     user: User = Depends(get_current_user),
 ):
     """流式聊天"""
-    if not request.kb_ids:
-        raise HTTPException(400, "请选择至少一个知识库")
-    
-    # 自动获取默认的聊天模型
-    result = await db.execute(
-        select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
-    )
-    chat_model = result.scalar_one_or_none()
-    
-    if not chat_model:
-        raise HTTPException(400, "请先前往模型管理设置默认聊天模型")
-    
-    # 设置默认模型ID
-    request.model_id = chat_model.id
+    try:
+        async def event_generator():
+            async for token in chat_service.chat_stream(db, request, user.id):
+                yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
 
-    from backend.app.core.rag_pipeline import RAGPipeline
-    pipeline = RAGPipeline()
-
-    async def event_generator():
-        async for token in pipeline.run_stream(
-            query=request.query,
-            kb_ids=request.kb_ids,
-            model_id=request.model_id,
-        ):
-            yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-    )
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"流式聊天失败：{str(e)}")
 
 
 @router.get("/conversations", response_model=Response)
@@ -204,43 +184,22 @@ async def initialize_model(
     if not model_id:
         raise HTTPException(400, "模型ID不能为空")
     
-    # 从数据库获取模型详情
-    result = await db.execute(
-        select(Model).where(Model.id == model_id, Model.is_active == True)
-    )
-    model = result.scalar_one_or_none()
-    if not model:
-        raise HTTPException(404, "模型不存在或未激活")
-
     # 获取知识库和模型参数
     kb_id = model_data.get("kb_id")
     embedding_model_id = model_data.get("embedding_model_id")
     rerank_model_id = model_data.get("rerank_model_id")
 
-    # 初始化模型变量
-    embedding_model = None
-    rerank_model = None
-
-    # 如果提供了embedding_model_id，从数据库获取embedding模型详情
-    if embedding_model_id:
-        embedding_result = await db.execute(
-            select(Model).where(Model.id == embedding_model_id, Model.is_active == True)
+    try:
+        # 调用service层的初始化方法
+        model = chat_service.initialize_rag_pipeline(
+            model_id=model_id,
+            kb_id=kb_id,
+            embedding_model_id=embedding_model_id,
+            rerank_model_id=rerank_model_id,
+            db=db
         )
-        embedding_model = embedding_result.scalar_one_or_none()
-
-    # 如果提供了rerank_model_id，从数据库获取rerank模型详情
-    if rerank_model_id:
-        rerank_result = await db.execute(
-            select(Model).where(Model.id == rerank_model_id, Model.is_active == True)
-        )
-        rerank_model = rerank_result.scalar_one_or_none()
-
-    # 初始化RAG pipeline，传递模型详情
-    chat_service.rag_pipeline = RAGPipeline(
-        api_key=model.api_key,
-        base_url=model.base_url,
-        embedding_model=embedding_model,
-        rerank_model=rerank_model
-    )
-
-    return Response(data={"message": f"模型 {model.name} 配置验证成功", "model_id": model_id, "model": model.model})
+        return Response(data={"message": f"模型 {model.name} 配置验证成功", "model_id": model_id, "model": model.model})
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"初始化模型失败：{str(e)}")
