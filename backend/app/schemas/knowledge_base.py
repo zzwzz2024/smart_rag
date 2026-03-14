@@ -1,60 +1,60 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
 
 
 class KBCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    avatar: Optional[str] = "📚"
-    embedding_model: Optional[str] = "text-embedding-3-small"
-    embedding_model_id: Optional[str] = None
-    rerank_model: Optional[str] = ""
-    rerank_model_id: Optional[str] = None
-    chunk_size: Optional[int] = 512
-    chunk_overlap: Optional[int] = 64
-    chunk_method: Optional[str] = "smart"
-    retrieval_mode: Optional[str] = "hybrid"
-    tag_ids: Optional[List[str]] = []
-    domain_ids: Optional[List[str]] = []
+    name: str = Field(..., description="知识库名称")
+    description: Optional[str] = Field(None, description="知识库描述")
+    avatar: Optional[str] = Field("📚", description="知识库头像")
+    embedding_model: Optional[str] = Field("text-embedding-3-small", description="嵌入模型")
+    embedding_model_id: Optional[str] = Field(None, description="嵌入模型ID")
+    rerank_model: Optional[str] = Field("", description="重排序模型")
+    rerank_model_id: Optional[str] = Field(None, description="重排序模型ID")
+    chunk_size: Optional[int] = Field(512, description="分块大小")
+    chunk_overlap: Optional[int] = Field(64, description="分块重叠大小")
+    chunk_method: Optional[str] = Field("smart", description="分块方法")
+    retrieval_mode: Optional[str] = Field("hybrid", description="检索模式")
+    tag_ids: Optional[List[str]] = Field(default_factory=list, description="标签ID列表")
+    domain_ids: Optional[List[str]] = Field(default_factory=list, description="领域ID列表")
 
 
 class KBUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    avatar: Optional[str] = None
-    embedding_model: Optional[str] = None
-    embedding_model_id: Optional[str] = None
-    rerank_model: Optional[str] = None
-    rerank_model_id: Optional[str] = None
-    chunk_size: Optional[int] = None
-    chunk_overlap: Optional[int] = None
-    chunk_method: Optional[str] = None
-    retrieval_mode: Optional[str] = None
-    tag_ids: Optional[List[str]] = None
-    domain_ids: Optional[List[str]] = None
+    name: Optional[str] = Field(None, description="知识库名称")
+    description: Optional[str] = Field(None, description="知识库描述")
+    avatar: Optional[str] = Field(None, description="知识库头像")
+    embedding_model: Optional[str] = Field(None, description="嵌入模型")
+    embedding_model_id: Optional[str] = Field(None, description="嵌入模型ID")
+    rerank_model: Optional[str] = Field(None, description="重排序模型")
+    rerank_model_id: Optional[str] = Field(None, description="重排序模型ID")
+    chunk_size: Optional[int] = Field(None, description="分块大小")
+    chunk_overlap: Optional[int] = Field(None, description="分块重叠大小")
+    chunk_method: Optional[str] = Field(None, description="分块方法")
+    retrieval_mode: Optional[str] = Field(None, description="检索模式")
+    tag_ids: Optional[List[str]] = Field(None, description="标签ID列表")
+    domain_ids: Optional[List[str]] = Field(None, description="领域ID列表")
 
 
 class KBResponse(BaseModel):
-    id: str
-    name: str
-    description: Optional[str]
-    avatar: str
-    embedding_model: str
-    embedding_model_id: Optional[str]
-    rerank_model: Optional[str]
-    rerank_model_id: Optional[str]
-    chunk_size: int
-    chunk_overlap: int
-    chunk_method: str
-    retrieval_mode: str
-    doc_count: int
-    chunk_count: int
-    owner_id: str
-    created_at: datetime
-    updated_at: datetime
-    tags: List[dict] = []
-    domains: List[dict] = []
+    id: str = Field(..., description="知识库ID")
+    name: str = Field(..., description="知识库名称")
+    description: Optional[str] = Field(None, description="知识库描述")
+    avatar: str = Field(..., description="知识库头像")
+    embedding_model: str = Field(..., description="嵌入模型")
+    embedding_model_id: Optional[str] = Field(None, description="嵌入模型ID")
+    rerank_model: Optional[str] = Field(None, description="重排序模型")
+    rerank_model_id: Optional[str] = Field(None, description="重排序模型ID")
+    chunk_size: int = Field(..., description="分块大小")
+    chunk_overlap: int = Field(..., description="分块重叠大小")
+    chunk_method: str = Field(..., description="分块方法")
+    retrieval_mode: str = Field(..., description="检索模式")
+    doc_count: int = Field(..., description="文档数量")
+    chunk_count: int = Field(..., description="分块数量")
+    owner_id: str = Field(..., description="所有者ID")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
+    tags: List[dict] = Field(default_factory=list, description="标签列表")
+    domains: List[dict] = Field(default_factory=list, description="领域列表")
 
     class Config:
         from_attributes = True

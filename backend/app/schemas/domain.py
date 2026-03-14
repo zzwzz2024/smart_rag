@@ -24,9 +24,9 @@ class DomainUpdate(BaseModel):
 
 class DomainResponse(DomainBase):
     """领域响应模型"""
-    id: str
-    created_at: datetime
-    updated_at: datetime
+    id: str = Field(..., description="领域ID")
+    created_at: datetime = Field(..., description="创建时间")
+    updated_at: datetime = Field(..., description="更新时间")
 
     class Config:
         from_attributes = True
