@@ -29,7 +29,7 @@ async def get_tags(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[Ta
     """获取标签列表"""
     try:
         result = await db.execute(
-            select(Tag).offset(skip).limit(limit)
+            select(Tag).where(Tag.is_deleted == False).order_by(Tag.created_at.desc()).offset(skip).limit(limit)
         )
         tags = result.scalars().all()
         return tags
@@ -42,7 +42,7 @@ async def get_tag(db: AsyncSession, tag_id: str) -> Optional[Tag]:
     """获取标签详情"""
     try:
         result = await db.execute(
-            select(Tag).where(Tag.id == tag_id)
+            select(Tag).where(Tag.id == tag_id, Tag.is_deleted == False)
         )
         tag = result.scalar_one_or_none()
         return tag
@@ -55,7 +55,7 @@ async def update_tag(db: AsyncSession, tag_id: str, tag_data: TagUpdate) -> Opti
     """更新标签"""
     try:
         result = await db.execute(
-            select(Tag).where(Tag.id == tag_id)
+            select(Tag).where(Tag.id == tag_id, Tag.is_deleted == False)
         )
         tag = result.scalar_one_or_none()
         if not tag:
@@ -79,13 +79,14 @@ async def delete_tag(db: AsyncSession, tag_id: str) -> bool:
     """删除标签"""
     try:
         result = await db.execute(
-            select(Tag).where(Tag.id == tag_id)
+            select(Tag).where(Tag.id == tag_id, Tag.is_deleted == False)
         )
         tag = result.scalar_one_or_none()
         if not tag:
             return False
         
-        await db.delete(tag)
+        # 伪删除：将is_deleted字段设置为True
+        tag.is_deleted = True
         await db.commit()
         logger.info(f"Deleted tag: {tag.name}")
         return True

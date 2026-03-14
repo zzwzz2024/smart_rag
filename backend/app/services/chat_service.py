@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from loguru import logger
-from backend.app.models.conversation import Conversation, Message
+from backend.app.models.conversation import Conversation, Message, ChatLog
 from backend.app.models.model import Model
 from backend.app.core.rag_pipeline import RAGPipeline
 from backend.app.schemas.chat import ChatRequest, ChatResponse, Citation
@@ -177,6 +177,20 @@ async def chat(
         },
     )
     db.add(ai_message)
+    
+    # 创建聊天日志记录
+    chat_log = ChatLog(
+        user_id=user_id,
+        conversation_id=conversation.id,
+        message_id=ai_message.id,
+        query=request.query,
+        answer=result.answer,
+        model_used=model_name,
+        knowledge_bases=request.kb_ids,
+        response_time=result.response_time,
+    )
+    db.add(chat_log)
+    
     await db.commit()
 
     # 构建响应

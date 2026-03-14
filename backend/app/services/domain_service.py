@@ -29,7 +29,7 @@ async def get_domains(db: AsyncSession, skip: int = 0, limit: int = 100) -> List
     """获取领域列表"""
     try:
         result = await db.execute(
-            select(Domain).offset(skip).limit(limit)
+            select(Domain).where(Domain.is_deleted == False).order_by(Domain.created_at.desc()).offset(skip).limit(limit)
         )
         domains = result.scalars().all()
         return domains
@@ -42,7 +42,7 @@ async def get_domain(db: AsyncSession, domain_id: str) -> Optional[Domain]:
     """获取领域详情"""
     try:
         result = await db.execute(
-            select(Domain).where(Domain.id == domain_id)
+            select(Domain).where(Domain.id == domain_id, Domain.is_deleted == False)
         )
         domain = result.scalar_one_or_none()
         return domain
@@ -55,7 +55,7 @@ async def update_domain(db: AsyncSession, domain_id: str, domain_data: DomainUpd
     """更新领域"""
     try:
         result = await db.execute(
-            select(Domain).where(Domain.id == domain_id)
+            select(Domain).where(Domain.id == domain_id, Domain.is_deleted == False)
         )
         domain = result.scalar_one_or_none()
         if not domain:
@@ -79,13 +79,14 @@ async def delete_domain(db: AsyncSession, domain_id: str) -> bool:
     """删除领域"""
     try:
         result = await db.execute(
-            select(Domain).where(Domain.id == domain_id)
+            select(Domain).where(Domain.id == domain_id, Domain.is_deleted == False)
         )
         domain = result.scalar_one_or_none()
         if not domain:
             return False
         
-        await db.delete(domain)
+        # 伪删除：将is_deleted字段设置为True
+        domain.is_deleted = True
         await db.commit()
         logger.info(f"Deleted domain: {domain.name}")
         return True

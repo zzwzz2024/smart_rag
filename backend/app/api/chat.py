@@ -32,17 +32,6 @@ async def chat(
     user: User = Depends(get_current_user),
 ):
     """发送聊天消息"""
-    # 自动获取默认的聊天模型
-    # result = await db.execute(
-    #     select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
-    # )
-    # chat_model = result.scalar_one_or_none()
-    #
-    # if not chat_model:
-    #     raise HTTPException(400, "请先前往模型管理设置默认聊天模型")
-    #
-    # # 设置默认模型ID
-    # request.model_id = chat_model.id
 
     # 实现意图识别和知识库匹配
     from backend.app.services.intent_service import IntentService
@@ -105,7 +94,7 @@ async def list_conversations(
     """获取对话列表"""
     result = await db.execute(
         select(Conversation)
-        .where(Conversation.user_id == user.id)
+        .where(Conversation.user_id == user.id, Conversation.is_deleted == False)
         .order_by(Conversation.updated_at.desc())
         .limit(50)
     )
@@ -122,7 +111,7 @@ async def get_messages(
     """获取对话消息"""
     result = await db.execute(
         select(Message)
-        .where(Message.conversation_id == conv_id)
+        .where(Message.conversation_id == conv_id, Message.is_deleted == False)
         .order_by(Message.created_at)
     )
     messages = result.scalars().all()
@@ -153,12 +142,14 @@ async def delete_conversation(
 ):
     """删除对话"""
     result = await db.execute(
-        select(Conversation).where(Conversation.id == conv_id)
+        select(Conversation).where(Conversation.id == conv_id, Conversation.is_deleted == False)
     )
     conv = result.scalar_one_or_none()
     if not conv or conv.user_id != user.id:
         raise HTTPException(404, "对话不存在")
-    await db.delete(conv)
+    # 伪删除：将is_deleted字段设置为True
+    conv.is_deleted = True
+    await db.commit()
     return Response(data={"message": "已删除"})
 
 

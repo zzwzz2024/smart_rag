@@ -6,7 +6,7 @@ from backend.app.database import Base
 from typing import Optional, List
 
 class Role(Base):
-    __tablename__ = "roles"
+    __tablename__ = "sys_roles"
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -23,15 +23,15 @@ class Role(Base):
 
     # 关系
     users = relationship("User", back_populates="user_role", foreign_keys="User.role_id")
-    permissions = relationship("Permission", secondary="role_permissions", back_populates="roles")
+    permissions = relationship("Permission", secondary="sys_role_permissions", back_populates="roles")
 
 
 # backend/app/models/system.py
 class Menu(Base):
-    __tablename__ = "menus"
+    __tablename__ = "sys_menus"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    parent_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("menus.id"))
+    parent_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("sys_menus.id"))
     sort: Mapped[int] = mapped_column(Integer, default=0)
 
     # ✅ 补充缺失字段
@@ -63,7 +63,7 @@ class Menu(Base):
 
 
 class Permission(Base):
-    __tablename__ = "permissions"
+    __tablename__ = "sys_permissions"
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -72,7 +72,7 @@ class Permission(Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     menu_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("menus.id"), nullable=True
+        String(36), ForeignKey("sys_menus.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
@@ -83,17 +83,17 @@ class Permission(Base):
 
     # 关系
     menu = relationship("Menu", back_populates="permissions")
-    roles = relationship("Role", secondary="role_permissions", back_populates="permissions")
+    roles = relationship("Role", secondary="sys_role_permissions", back_populates="permissions")
 
 
 class RolePermission(Base):
-    __tablename__ = "role_permissions"
+    __tablename__ = "sys_role_permissions"
 
     role_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("roles.id"), primary_key=True
+        String(36), ForeignKey("sys_roles.id"), primary_key=True
     )
     permission_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("permissions.id"), primary_key=True
+        String(36), ForeignKey("sys_permissions.id"), primary_key=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
@@ -101,7 +101,7 @@ class RolePermission(Base):
 
 
 class Dictionary(Base):
-    __tablename__ = "dictionaries"
+    __tablename__ = "sys_dictionaries"
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -121,13 +121,13 @@ class Dictionary(Base):
 
 
 class DictionaryItem(Base):
-    __tablename__ = "dictionary_items"
+    __tablename__ = "sys_dictionary_items"
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     dictionary_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("dictionaries.id"), nullable=False
+        String(36), ForeignKey("sys_dictionaries.id"), nullable=False
     )
     key: Mapped[str] = mapped_column(String(50), nullable=False)
     value: Mapped[str] = mapped_column(String(100), nullable=False)

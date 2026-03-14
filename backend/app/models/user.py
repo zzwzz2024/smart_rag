@@ -6,7 +6,7 @@ from backend.app.database import Base
 
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "sys_users"
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -17,8 +17,9 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     role: Mapped[str] = mapped_column(String(20), default="user")  # admin / user
     role_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("roles.id"), nullable=True
+        String(36), ForeignKey("sys_roles.id"), nullable=True
     )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )

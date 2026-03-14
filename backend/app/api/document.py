@@ -35,7 +35,7 @@ async def initialize_kb_models(
     """初始化知识库关联的模型"""
     # 验证知识库
     result = await db.execute(
-        select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+        select(KnowledgeBase).where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
     )
     kb = result.scalar_one_or_none()
     if not kb or kb.owner_id != user.id:
@@ -90,7 +90,7 @@ async def upload_document(
     """上传文档到知识库"""
     # 验证知识库
     result = await db.execute(
-        select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+        select(KnowledgeBase).where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
     )
     kb = result.scalar_one_or_none()
     if not kb or kb.owner_id != user.id:
@@ -166,7 +166,7 @@ async def list_documents(
     from datetime import datetime
     
     # 构建查询
-    stmt = select(Document).where(Document.kb_id == kb_id)
+    stmt = select(Document).where(Document.kb_id == kb_id, Document.is_deleted == False)
     
     # 添加文件名过滤
     if filename:
@@ -219,7 +219,7 @@ async def get_chunks(
     """获取文档的分块列表"""
     result = await db.execute(
         select(DocumentChunk)
-        .where(DocumentChunk.doc_id == doc_id)
+        .where(DocumentChunk.doc_id == doc_id, DocumentChunk.is_deleted == False)
         .order_by(DocumentChunk.chunk_index)
     )
     chunks = result.scalars().all()
@@ -233,7 +233,7 @@ async def delete_document(
     user: User = Depends(get_current_user),
 ):
     """删除文档"""
-    result = await db.execute(select(Document).where(Document.id == doc_id))
+    result = await db.execute(select(Document).where(Document.id == doc_id, Document.is_deleted == False))
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(404, "文档不存在")
@@ -245,5 +245,31 @@ async def delete_document(
     if os.path.exists(doc.file_path):
         os.remove(doc.file_path)
 
-    await db.delete(doc)
+    # 伪删除：将文档和相关的文档分块标记为已删除
+    doc.is_deleted = True
+    
+    # 标记相关的文档分块为已删除
+    from sqlalchemy import update
+    await db.execute(
+        update(DocumentChunk)
+        .where(DocumentChunk.doc_id == doc_id)
+        .values(is_deleted=True)
+    )
+    
+    # 更新知识库统计
+    from backend.app.models.knowledge_base import KnowledgeBase
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id)
+    )
+    kb = kb_result.scalar_one_or_none()
+    if kb:
+        # 重新计算，只统计未删除的文档
+        count_result = await db.execute(
+            select(Document).where(Document.kb_id == doc.kb_id, Document.is_deleted == False)
+        )
+        all_docs = count_result.scalars().all()
+        kb.doc_count = len(all_docs)
+        kb.chunk_count = sum(d.chunk_count for d in all_docs)
+
+    await db.commit()
     return Response(data={"message": "已删除"})

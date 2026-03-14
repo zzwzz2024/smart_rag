@@ -10,110 +10,119 @@
       </div>
       <nav class="sidebar-nav">
         <ul>
-          <!-- 静态菜单：聊天 -->
-          <li>
-            <router-link to="/chat" @click="handleMenuClick('/chat', 'chat', '聊天')">
-              <i class="icon">💬</i>
-              <span>聊天</span>
-            </router-link>
-          </li>
-          <!-- 静态菜单：知识库 -->
-          <li class="has-submenu" :class="{ 'open': openSubmenu === 'knowledge' }">
-            <div class="submenu-title" @click="toggleSubmenu('knowledge')">
-              <i class="icon">📚</i>
-              <span>知识库</span>
-              <i class="submenu-arrow">{{ openSubmenu === 'knowledge' ? '▼' : '▶' }}</i>
-            </div>
-            <ul class="submenu">
-              <li :class="{ 'active': route.path === '/knowledge-base' }">
-                <router-link to="/knowledge-base" @click="handleMenuClick('/knowledge-base', 'knowledge-base', '知识库管理')">
-                  <i class="icon">📚</i>
-                  <span>知识库管理</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': route.path === '/documents' }">
-                <router-link to="/documents" @click="handleMenuClick('/documents', 'documents', '文档管理')">
-                  <i class="icon">📄</i>
-                  <span>文档管理</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': route.path === '/evaluation' }">
-                <router-link to="/evaluation" @click="handleMenuClick('/evaluation', 'evaluation', '知识库评估')">
-                  <i class="icon">📊</i>
-                  <span>知识库评估</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': route.path === '/api-auth-management' }">
-                <router-link to="/api-auth-management" @click="handleMenuClick('/api-auth-management', 'api_management', 'API接口管理')">
-                  <i class="icon">🔑</i>
-                  <span>API接口管理</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': route.path === '/kb/tags' }">
-                <router-link to="/kb/tags" @click="handleMenuClick('/kb/tags', 'tag_management', '标签管理')">
-                  <i class="icon">🏷️</i>
-                  <span>标签管理</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': route.path === '/kb/domains' }">
-                <router-link to="/kb/domains" @click="handleMenuClick('/kb/domains', 'domain_management', '领域管理')">
-                  <i class="icon">🌐</i>
-                  <span>领域管理</span>
-                </router-link>
-              </li>
-            </ul>
-          </li>
-          <!-- 静态菜单：模型管理 -->
-          <li class="has-submenu" :class="{ 'open': openSubmenu === 'model' }">
-            <div class="submenu-title" @click="toggleSubmenu('model')">
-              <i class="icon">🤖</i>
-              <span>模型管理</span>
-              <i class="submenu-arrow">{{ openSubmenu === 'model' ? '▼' : '▶' }}</i>
-            </div>
-            <ul class="submenu">
-              <li :class="{ 'active': activeModelSubmenu === 'embedding' }">
-                <router-link to="/model-settings?type=embedding" @click="handleMenuClick('/model-settings?type=embedding', 'model-settings', 'Embedding模型')">
-                  <i class="icon">🤖</i>
-                  <span>Embedding模型</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': activeModelSubmenu === 'chat' }">
-                <router-link to="/model-settings?type=chat" @click="handleMenuClick('/model-settings?type=chat', 'model-settings', '聊天模型')">
-                  <i class="icon">🤖</i>
-                  <span>聊天模型</span>
-                </router-link>
-              </li>
-              <li :class="{ 'active': activeModelSubmenu === 'rerank' }">
-                <router-link to="/model-settings?type=rerank" @click="handleMenuClick('/model-settings?type=rerank', 'model-settings', 'Rerank模型')">
-                  <i class="icon">🤖</i>
-                  <span>Rerank模型</span>
-                </router-link>
-              </li>
-            </ul>
-          </li>
-
-          <!-- 动态菜单：系统设置 -->
-          <template v-for="menu in menuStore.menus" :key="menu.id">
-            <li v-if="!menu.children || menu.children.length === 0">
-              <router-link :to="menu.path" @click="handleMenuClick(menu.path, menu.code, menu.name)">
-                <i class="icon">{{ menu.icon || '📋' }}</i>
-                <span>{{ menu.name }}</span>
+          <!-- 所有菜单：当后端返回菜单时显示 -->
+          <template v-if="menuStore.menus.length > 0">
+            <!-- 静态菜单：聊天 -->
+            <li>
+              <router-link to="/chat" @click="handleMenuClick('/chat', 'chat', '聊天')">
+                <i class="icon">💬</i>
+                <span>聊天</span>
               </router-link>
             </li>
-            <li v-else class="has-submenu" :class="{ 'open': openSubmenu === menu.code }">
-              <div class="submenu-title" @click="toggleSubmenu(menu.code)">
-                <i class="icon">{{ menu.icon || '📋' }}</i>
-                <span>{{ menu.name }}</span>
-                <i class="submenu-arrow">{{ openSubmenu === menu.code ? '▼' : '▶' }}</i>
+            <!-- 静态菜单：知识库 -->
+            <li class="has-submenu" :class="{ 'open': openSubmenu === 'knowledge' }">
+              <div class="submenu-title" @click="toggleSubmenu('knowledge')">
+                <i class="icon">📚</i>
+                <span>知识库</span>
+                <i class="submenu-arrow">{{ openSubmenu === 'knowledge' ? '▼' : '▶' }}</i>
               </div>
               <ul class="submenu">
-                <li v-for="childMenu in menu.children" :key="childMenu.id" :class="{ 'active': route.path === childMenu.path }">
-                  <router-link :to="childMenu.path" @click="handleMenuClick(childMenu.path, childMenu.code, childMenu.name)">
-                    <i class="icon">{{ childMenu.icon || '📋' }}</i>
-                    <span>{{ childMenu.name }}</span>
+                <li :class="{ 'active': route.path === '/knowledge-base' }">
+                  <router-link to="/knowledge-base" @click="handleMenuClick('/knowledge-base', 'knowledge-base', '知识库管理')">
+                    <i class="icon">📚</i>
+                    <span>知识库管理</span>
+                  </router-link>
+                </li>
+                <li :class="{ 'active': route.path === '/documents' }">
+                  <router-link to="/documents" @click="handleMenuClick('/documents', 'documents', '文档管理')">
+                    <i class="icon">📄</i>
+                    <span>文档管理</span>
+                  </router-link>
+                </li>
+                <li :class="{ 'active': route.path === '/evaluation' }">
+                  <router-link to="/evaluation" @click="handleMenuClick('/evaluation', 'evaluation', '知识库评估')">
+                    <i class="icon">📊</i>
+                    <span>知识库评估</span>
+                  </router-link>
+                </li>
+                <li :class="{ 'active': route.path === '/api-auth-management' }">
+                  <router-link to="/api-auth-management" @click="handleMenuClick('/api-auth-management', 'api_management', 'API接口管理')">
+                    <i class="icon">🔑</i>
+                    <span>API接口管理</span>
+                  </router-link>
+                </li>
+                <li :class="{ 'active': route.path === '/kb/tags' }">
+                  <router-link to="/kb/tags" @click="handleMenuClick('/kb/tags', 'tag_management', '标签管理')">
+                    <i class="icon">🏷️</i>
+                    <span>标签管理</span>
+                  </router-link>
+                </li>
+                <li :class="{ 'active': route.path === '/kb/domains' }">
+                  <router-link to="/kb/domains" @click="handleMenuClick('/kb/domains', 'domain_management', '领域管理')">
+                    <i class="icon">🌐</i>
+                    <span>领域管理</span>
                   </router-link>
                 </li>
               </ul>
+            </li>
+            <!-- 静态菜单：模型管理 -->
+            <li class="has-submenu" :class="{ 'open': openSubmenu === 'model' }">
+              <div class="submenu-title" @click="toggleSubmenu('model')">
+                <i class="icon">🤖</i>
+                <span>模型管理</span>
+                <i class="submenu-arrow">{{ openSubmenu === 'model' ? '▼' : '▶' }}</i>
+              </div>
+              <ul class="submenu">
+                <li :class="{ 'active': activeModelSubmenu === 'embedding' }">
+                  <router-link to="/model-settings?type=embedding" @click="handleMenuClick('/model-settings?type=embedding', 'model-settings', 'Embedding模型')">
+                    <i class="icon">🤖</i>
+                    <span>Embedding模型</span>
+                  </router-link>
+                </li>
+                <li :class="{ 'active': activeModelSubmenu === 'chat' }">
+                  <router-link to="/model-settings?type=chat" @click="handleMenuClick('/model-settings?type=chat', 'model-settings', '聊天模型')">
+                    <i class="icon">🤖</i>
+                    <span>聊天模型</span>
+                  </router-link>
+                </li>
+                <li :class="{ 'active': activeModelSubmenu === 'rerank' }">
+                  <router-link to="/model-settings?type=rerank" @click="handleMenuClick('/model-settings?type=rerank', 'model-settings', 'Rerank模型')">
+                    <i class="icon">🤖</i>
+                    <span>Rerank模型</span>
+                  </router-link>
+                </li>
+              </ul>
+            </li>
+
+            <!-- 动态菜单：系统设置 -->
+            <template v-for="menu in menuStore.menus" :key="menu.id">
+              <li v-if="!menu.children || menu.children.length === 0">
+                <router-link :to="menu.path" @click="handleMenuClick(menu.path, menu.code, menu.name)">
+                  <i class="icon">{{ menu.icon || '📋' }}</i>
+                  <span>{{ menu.name }}</span>
+                </router-link>
+              </li>
+              <li v-else class="has-submenu" :class="{ 'open': openSubmenu === menu.code }">
+                <div class="submenu-title" @click="toggleSubmenu(menu.code)">
+                  <i class="icon">{{ menu.icon || '📋' }}</i>
+                  <span>{{ menu.name }}</span>
+                  <i class="submenu-arrow">{{ openSubmenu === menu.code ? '▼' : '▶' }}</i>
+                </div>
+                <ul class="submenu">
+                  <li v-for="childMenu in menu.children" :key="childMenu.id" :class="{ 'active': route.path === childMenu.path }">
+                    <router-link :to="childMenu.path" @click="handleMenuClick(childMenu.path, childMenu.code, childMenu.name)">
+                      <i class="icon">{{ childMenu.icon || '📋' }}</i>
+                      <span>{{ childMenu.name }}</span>
+                    </router-link>
+                  </li>
+                </ul>
+              </li>
+            </template>
+          </template>
+          <!-- 当后端返回空菜单时显示提示 -->
+          <template v-else>
+            <li class="no-menu-tip">
+              <span>无可用菜单</span>
             </li>
           </template>
         </ul>
@@ -721,6 +730,15 @@ onUnmounted(() => {
 
 .sidebar.collapsed .logout-btn .icon {
   margin-right: 0;
+}
+
+/* 无可用菜单提示样式 */
+.no-menu-tip {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+  font-style: italic;
 }
 
 /* 主内容区样式 */

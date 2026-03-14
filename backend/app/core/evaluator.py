@@ -31,6 +31,7 @@ class Evaluator:
                 and_(
                     Message.role == "assistant",
                     Message.created_at >= since,
+                    Message.is_deleted == False,
                 )
             )
         )

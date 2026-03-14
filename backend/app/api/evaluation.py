@@ -451,7 +451,7 @@ async def get_evaluations(
     
     from sqlalchemy import or_
     
-    db_query = select(Evaluation).order_by(Evaluation.created_at.desc())
+    db_query = select(Evaluation).where(Evaluation.is_deleted == False).order_by(Evaluation.created_at.desc())
     
     # 按知识库ID过滤
     if kb_id:
@@ -750,7 +750,7 @@ async def update_evaluation(
     score = min(1.0, max(0.0, score))
     
     # 获取现有评估
-    result = await db.execute(select(Evaluation).where(Evaluation.id == eval_id))
+    result = await db.execute(select(Evaluation).where(Evaluation.id == eval_id, Evaluation.is_deleted == False))
     evaluation = result.scalar_one_or_none()
     
     if not evaluation:
@@ -777,13 +777,14 @@ async def delete_evaluation(
     user: User = Depends(get_current_user),
 ):
     """删除评估"""
-    result = await db.execute(select(Evaluation).where(Evaluation.id == eval_id))
+    result = await db.execute(select(Evaluation).where(Evaluation.id == eval_id, Evaluation.is_deleted == False))
     evaluation = result.scalar_one_or_none()
     
     if not evaluation:
         raise HTTPException(status_code=404, detail="评估不存在")
     
-    await db.delete(evaluation)
+    # 伪删除：将is_deleted字段设置为True
+    evaluation.is_deleted = True
     await db.commit()
     
     return Response(data={"message": "评估已删除"})

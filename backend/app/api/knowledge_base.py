@@ -185,7 +185,7 @@ async def list_kbs(
             selectinload(KnowledgeBase.tags),
             selectinload(KnowledgeBase.domains)
         )
-        .where(KnowledgeBase.owner_id == user.id)
+        .where(KnowledgeBase.owner_id == user.id, KnowledgeBase.is_deleted == False)
         .order_by(KnowledgeBase.updated_at.desc())
     )
     kbs = result.scalars().all()
@@ -232,7 +232,7 @@ async def get_kb(
             selectinload(KnowledgeBase.tags),
             selectinload(KnowledgeBase.domains)
         )
-        .where(KnowledgeBase.id == kb_id)
+        .where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
     )
     kb = result.scalar_one_or_none()
     if not kb or kb.owner_id != user.id:
@@ -278,7 +278,7 @@ async def update_kb(
             selectinload(KnowledgeBase.tags),
             selectinload(KnowledgeBase.domains)
         )
-        .where(KnowledgeBase.id == kb_id)
+        .where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
     )
     kb = result.scalar_one_or_none()
     if not kb or kb.owner_id != user.id:
@@ -390,7 +390,7 @@ async def delete_kb(
 ):
     """删除知识库"""
     result = await db.execute(
-        select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+        select(KnowledgeBase).where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
     )
     kb = result.scalar_one_or_none()
     if not kb or kb.owner_id != user.id:
@@ -398,6 +398,7 @@ async def delete_kb(
 
     # 删除向量库
     vector_store.delete_collection(kb_id)
-    # 级联删除（ORM 配置了 cascade）
-    await db.delete(kb)
+    # 伪删除：将is_deleted字段设置为True
+    kb.is_deleted = True
+    await db.commit()
     return Response(data={"message": "已删除"})

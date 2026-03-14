@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Integer, DateTime, ForeignKey
+from sqlalchemy import String, Text, Integer, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.database import Base
 from backend.app.models.tag import knowledge_base_tag_association
@@ -8,7 +8,7 @@ from backend.app.models.domain import knowledge_base_domain_association
 
 
 class KnowledgeBase(Base):
-    __tablename__ = "knowledge_bases"
+    __tablename__ = "kb_knowledge_bases"
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -22,13 +22,13 @@ class KnowledgeBase(Base):
         String(100), default="text-embedding-3-small"
     )
     embedding_model_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("models.id"), nullable=True
+        String(36), ForeignKey("m_models.id"), nullable=True
     )
     rerank_model: Mapped[str] = mapped_column(
         String(100), default="", nullable=True
     )
     rerank_model_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("models.id"), nullable=True
+        String(36), ForeignKey("m_models.id"), nullable=True
     )
     chunk_size: Mapped[int] = mapped_column(Integer, default=512)
     chunk_overlap: Mapped[int] = mapped_column(Integer, default=64)
@@ -45,8 +45,9 @@ class KnowledgeBase(Base):
 
     # 所属
     owner_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("users.id")
+        String(36), ForeignKey("sys_users.id")
     )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )

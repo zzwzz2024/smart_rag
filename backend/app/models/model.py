@@ -12,11 +12,12 @@ class ModelType(str, Enum):
 
 
 class ModelVendor(Base):
-    __tablename__ = "model_vendors"
+    __tablename__ = "m_model_vendors"
 
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True, index=True)  # 厂商名称
     description = Column(Text, nullable=True)  # 厂商描述
+    is_deleted = Column(Boolean, default=False, nullable=False, index=True)  # 是否被删除
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -25,18 +26,19 @@ class ModelVendor(Base):
 
 
 class Model(Base):
-    __tablename__ = "models"
+    __tablename__ = "m_models"
 
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False, index=True)
     model = Column(String, nullable=False, index=True)  # 模型标识
     type = Column(String, nullable=False, index=True)  # 使用String类型替代SQLEnum
-    vendor_id = Column(String, ForeignKey("model_vendors.id"), nullable=True, index=True)  # 模型厂商外键
+    vendor_id = Column(String, ForeignKey("m_model_vendors.id"), nullable=True, index=True)  # 模型厂商外键
     api_key = Column(String, nullable=True)
     base_url = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False, index=True)  # 模型状态
     is_default = Column(Boolean, default=False, nullable=False, index=True)  # 是否为默认模型
+    is_deleted = Column(Boolean, default=False, nullable=False, index=True)  # 是否被删除
     # 模型参数
     top_k = Column(Integer, nullable=True, default=5)  # 检索时返回的top_k个结果
     temperature = Column(Float, nullable=True, default=0.7)  # 生成时的温度参数

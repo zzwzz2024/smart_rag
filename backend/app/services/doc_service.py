@@ -142,9 +142,9 @@ async def process_document(
         )
         kb = kb_result.scalar_one_or_none()
         if kb:
-            # 重新计算
+            # 重新计算，只统计未删除的文档
             count_result = await db.execute(
-                select(Document).where(Document.kb_id == doc.kb_id)
+                select(Document).where(Document.kb_id == doc.kb_id, Document.is_deleted == False)
             )
             all_docs = count_result.scalars().all()
             kb.doc_count = len(all_docs)
