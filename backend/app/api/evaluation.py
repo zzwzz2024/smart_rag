@@ -66,7 +66,7 @@ pipeline = RAGPipeline()
 # 加载语义相似度模型
 from backend.app.config import get_settings
 settings = get_settings()
-semantic_model = SentenceTransformer(settings.LOCAL_EMBEDDING_MODEL)
+semantic_model = ""#SentenceTransformer(settings.LOCAL_EMBEDDING_MODEL)
 
 # 评分辅助函数
 async def calculate_semantic_similarity(answer: str, reference: str, model=None) -> float:

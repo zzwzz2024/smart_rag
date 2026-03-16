@@ -43,72 +43,101 @@ class HybridRetriever:
         self.keyword_weight = 0.4  # 关键词权重
 
     async def retrieve(
-        self,
-        query: str,
-        kb_ids: List[str],
-        domain: str = None,  # 新增领域参数
-        top_k: int = 10,
-        mode: str = "hybrid",
-        vector_weight: float = None,
-        keyword_weight: float = None,
-    ) -> List[RetrievalResult]:
-        """
-        主检索入口
-        1. 查询扩展与优化
-        2. 多路召回
-        3. RRF 融合
-        """
-        # 根据领域选择策略
-        strategy = domain_strategies.get(domain, default_strategy)
-        
-        # 使用策略中的参数，否则使用传入值或默认值
-        v_weight = vector_weight or strategy.get("vector_weight", self.vector_weight)
-        k_weight = keyword_weight or strategy.get("keyword_weight", self.keyword_weight)
-        mode = mode or strategy.get("mode", "hybrid")
-        strategy_top_k = strategy.get("top_k", top_k)
-        use_expanded_query = strategy.get("use_expanded_query", True)
-        
-        logger.info(
-            f"Retrieving: query='{query[:50]}...', kb_ids={kb_ids}, domain={domain}, mode={mode}, "
-            f"vector_weight={v_weight}, keyword_weight={k_weight}, top_k={strategy_top_k}"
-        )
+                self,
+                query: str,
+                kb_ids: List[str],
+                domain: str = None,  # 新增领域参数
+                top_k: int = 10,
+                mode: str = "hybrid",
+                vector_weight: float = None,
+                keyword_weight: float = None,
+        ) -> List[RetrievalResult]:
+            """
+            主检索入口
+            1. 查询扩展与优化
+            2. 多路召回
+            3. RRF 融合
+            """
+            # 根据领域选择策略
+            strategy = domain_strategies.get(domain, default_strategy)
 
-        # Step 1: 查询优化与扩展
-        processed_query, expanded_queries = self._optimize_query(query, domain)
-        logger.info(f"优化后查询：{processed_query}, 扩展查询：{expanded_queries}")
+            # 使用策略中的参数，否则使用传入值或默认值
+            v_weight = vector_weight or strategy.get("vector_weight", self.vector_weight)
+            k_weight = keyword_weight or strategy.get("keyword_weight", self.keyword_weight)
+            mode = mode or strategy.get("mode", "hybrid")
+            strategy_top_k = strategy.get("top_k", top_k)
+            use_expanded_query = strategy.get("use_expanded_query", True)
 
-        all_results = []
+            logger.info(
+                f"Retrieving: query='{query[:50]}...', kb_ids={kb_ids}, domain={domain}, mode={mode}, "
+                f"vector_weight={v_weight}, keyword_weight={k_weight}, top_k={strategy_top_k}"
+            )
 
-        for kb_id in kb_ids:
-            if mode == "vector":
-                results = await self._vector_search(processed_query, kb_id, strategy_top_k * 3)  # 进一步扩大召回
-            elif mode == "keyword":
-                results = self._keyword_search(processed_query, kb_id, strategy_top_k * 3)
-            else:
-                # 混合检索：使用扩展查询增强
-                if use_expanded_query:
-                    results = await self._enhanced_hybrid_search(
-                        processed_query, expanded_queries, kb_id, strategy_top_k * 2, v_weight, k_weight
-                    )
+            # 新增：检查 kb_ids 是否为空
+            if not kb_ids:
+                logger.warning("kb_ids 为空，无法检索")
+                return []
+
+            # Step 1: 查询优化与扩展
+            processed_query, expanded_queries = self._optimize_query(query, domain)
+            logger.info(f"优化后查询：{processed_query}, 扩展查询：{expanded_queries}")
+
+            all_results = []
+
+            for kb_id in kb_ids:
+                logger.info(f"开始检索知识库：{kb_id}")
+
+                # 检查知识库是否存在
+                try:
+                    collection = self.vector_store._get_collection(kb_id)
+                    collection_count = collection.count()
+                    logger.info(f"【重要】知识库 {kb_id} 中文档总数：{collection_count}")
+
+                    if collection_count == 0:
+                        logger.warning(f"【警告】知识库 {kb_id} 为空，跳过检索")
+                        continue
+
+                    # 获取部分文档示例
+                    if collection_count > 0:
+                        sample_docs = collection.get(limit=3)
+                        if sample_docs and sample_docs["documents"]:
+                            logger.info(f"【示例】知识库 {kb_id} 中的文档示例:")
+                            for i, doc in enumerate(sample_docs["documents"][:2]):
+                                logger.info(f"  文档 {i + 1}: {doc[:100]}...")
+
+                except Exception as e:
+                    logger.error(f"获取知识库 {kb_id} 失败：{e}")
+                    continue
+
+                if mode == "vector":
+                    results = await self._vector_search(processed_query, kb_id, strategy_top_k * 3)  # 进一步扩大召回
+                elif mode == "keyword":
+                    results = self._keyword_search(processed_query, kb_id, strategy_top_k * 3)
                 else:
-                    results = await self._hybrid_search(
-                        processed_query, kb_id, strategy_top_k * 2, v_weight, k_weight
-                    )
-            all_results.extend(results)
+                    # 混合检索：使用扩展查询增强
+                    if use_expanded_query:
+                        results = await self._enhanced_hybrid_search(
+                            processed_query, expanded_queries, kb_id, strategy_top_k * 2, v_weight, k_weight
+                        )
+                    else:
+                        results = await self._hybrid_search(
+                            processed_query, kb_id, strategy_top_k * 2, v_weight, k_weight
+                        )
+                all_results.extend(results)
 
-        # 按分数排序
-        all_results.sort(key=lambda x: x.score, reverse=True)
+            # 按分数排序
+            all_results.sort(key=lambda x: x.score, reverse=True)
 
-        # 去重
-        seen = set()
-        unique_results = []
-        for r in all_results:
-            if r.chunk_id not in seen:
-                seen.add(r.chunk_id)
-                unique_results.append(r)
+            # 去重
+            seen = set()
+            unique_results = []
+            for r in all_results:
+                if r.chunk_id not in seen:
+                    seen.add(r.chunk_id)
+                    unique_results.append(r)
 
-        logger.info(f"检索到 {len(unique_results)} 个唯一结果")
-        return unique_results[:top_k]
+            logger.info(f"检索到 {len(unique_results)} 个唯一结果")
+            return unique_results[:top_k]
 
     def _optimize_query(self, query: str, domain: str = None) -> Tuple[str, List[str]]:
         """

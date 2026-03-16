@@ -12,14 +12,15 @@ alembic==1.13.1
 redis==5.0.7
 
 # AI / ML
-openai==1.35.0
+openai==2.28.0
 tiktoken==0.7.0
 sentence-transformers==3.0.1
 transformers==4.42.3
 torch==2.3.1
 
 # Vector Store
-chromadb==0.5.3
+#chromadb==0.5.3
+chromadb==1.5.5
 
 # Document Parsing
 pypdf==4.2.0

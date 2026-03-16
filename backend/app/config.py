@@ -21,11 +21,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # ---- 文件存储 ----
-    UPLOAD_DIR: str = "E:\\ai_code\\github workplace\\zzwzz_rag\\backend\\uploads"
+    # UPLOAD_DIR: str = "E:\\ai_code\\github workplace\\zzwzz_rag\\backend\\uploads"
+    UPLOAD_DIR: str = "D:\\code\\github\\smart_rag\\backend\\uploads"
     MAX_FILE_SIZE_MB: int = 100
 
     # ---- ChromaDB ----
-    CHROMA_PERSIST_DIR: str = "E:\\ai_code\\github workplace\\zzwzz_rag\\backend\\chroma_data"
+    # CHROMA_PERSIST_DIR: str = "E:\\ai_code\\github workplace\\zzwzz_rag\\backend\\chroma_data"
+    CHROMA_PERSIST_DIR: str = "D:\\code\\smart_rag\\backend\\chroma_data"
 
     # ---- LLM ----
     EMBEDDING_DIMENSION: int = 1536
