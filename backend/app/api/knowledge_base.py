@@ -2,20 +2,23 @@
 知识库管理 API
 """
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models.response_model import Response
 from backend.app.database import get_db
 from backend.app.models.user import User
-from backend.app.models.knowledge_base import KnowledgeBase
+from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseRole
 from backend.app.models.model import Model
 from backend.app.models.tag import Tag
 from backend.app.models.domain import Domain
 from backend.app.schemas.knowledge_base import KBCreate, KBUpdate, KBResponse
 from backend.app.utils.auth import get_current_user
 from backend.app.core.vector_store import VectorStore
+from sqlalchemy import select
+from backend.app.models.system import Role
+from backend.app.models.knowledge_base import KnowledgeBaseRole
 
 router = APIRouter()
 vector_store = VectorStore()
@@ -181,12 +184,40 @@ async def list_kbs(
     user: User = Depends(get_current_user),
 ):
     """获取知识库列表"""
-    from sqlalchemy import func
+    from sqlalchemy import func, or_, exists
+    from backend.app.models.system import Role
+    from backend.app.models.knowledge_base import KnowledgeBaseRole
+    
+    # 构建查询：用户自己的知识库 + 用户角色有权限的知识库
+    base_query = select(KnowledgeBase).where(
+        KnowledgeBase.is_deleted == False,
+        or_(
+            KnowledgeBase.owner_id == user.id,
+            exists(
+                select(KnowledgeBaseRole)
+                .where(
+                    KnowledgeBaseRole.kb_id == KnowledgeBase.id,
+                    KnowledgeBaseRole.role_id == user.role_id,
+                    KnowledgeBaseRole.is_deleted == False
+                )
+            )
+        )
+    )
     
     # 计算总数
     count_query = select(func.count(KnowledgeBase.id)).where(
-        KnowledgeBase.owner_id == user.id,
-        KnowledgeBase.is_deleted == False
+        KnowledgeBase.is_deleted == False,
+        or_(
+            KnowledgeBase.owner_id == user.id,
+            exists(
+                select(KnowledgeBaseRole)
+                .where(
+                    KnowledgeBaseRole.kb_id == KnowledgeBase.id,
+                    KnowledgeBaseRole.role_id == user.role_id,
+                    KnowledgeBaseRole.is_deleted == False
+                )
+            )
+        )
     )
     count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
@@ -194,12 +225,11 @@ async def list_kbs(
     # 分页查询
     offset = (page - 1) * page_size
     result = await db.execute(
-        select(KnowledgeBase)
+        base_query
         .options(
             selectinload(KnowledgeBase.tags),
             selectinload(KnowledgeBase.domains)
         )
-        .where(KnowledgeBase.owner_id == user.id, KnowledgeBase.is_deleted == False)
         .order_by(KnowledgeBase.updated_at.desc())
         .offset(offset)
         .limit(page_size)
@@ -246,16 +276,33 @@ async def get_kb(
     user: User = Depends(get_current_user),
 ):
     """获取知识库详情"""
+    from sqlalchemy import or_, exists
+    from backend.app.models.knowledge_base import KnowledgeBaseRole
+    
     result = await db.execute(
         select(KnowledgeBase)
         .options(
             selectinload(KnowledgeBase.tags),
             selectinload(KnowledgeBase.domains)
         )
-        .where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
+        .where(
+            KnowledgeBase.id == kb_id,
+            KnowledgeBase.is_deleted == False,
+            or_(
+                KnowledgeBase.owner_id == user.id,
+                exists(
+                    select(KnowledgeBaseRole)
+                    .where(
+                        KnowledgeBaseRole.kb_id == KnowledgeBase.id,
+                        KnowledgeBaseRole.role_id == user.role_id,
+                        KnowledgeBaseRole.is_deleted == False
+                    )
+                )
+            )
+        )
     )
     kb = result.scalar_one_or_none()
-    if not kb or kb.owner_id != user.id:
+    if not kb:
         raise HTTPException(404, "知识库不存在")
     
     # 构建响应数据，包括标签和领域信息
@@ -422,3 +469,139 @@ async def delete_kb(
     kb.is_deleted = True
     await db.commit()
     return Response(data={"message": "已删除"})
+
+
+@router.get("/knowledge-base/{kb_id}/permissions", response_model=Response)
+async def get_kb_permissions(
+    kb_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """获取知识库的角色权限列表"""
+    # 验证知识库存在
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    if not kb or kb.owner_id != user.id:
+        raise HTTPException(404, "知识库不存在")
+    
+    # 获取知识库的角色权限
+
+    result = await db.execute(
+        select(Role, KnowledgeBaseRole)
+        .join(KnowledgeBaseRole, Role.id == KnowledgeBaseRole.role_id)
+        .where(
+            KnowledgeBaseRole.kb_id == kb_id,
+            KnowledgeBaseRole.is_deleted == False
+        )
+    )
+    permissions = []
+    for role, kb_role in result.all():
+        permissions.append({
+            "role_id": role.id,
+            "role_name": role.name,
+            "role_code": role.code
+        })
+    
+    return Response(data=permissions)
+
+
+@router.post("/knowledge-base/{kb_id}/permissions", response_model=Response)
+async def add_kb_permission(
+    kb_id: str,
+    role_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """为知识库添加角色权限"""
+    # 验证知识库存在
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    if not kb or kb.owner_id != user.id:
+        raise HTTPException(404, "知识库不存在")
+    
+    # 验证角色存在
+    from backend.app.models.system import Role
+    role_result = await db.execute(
+        select(Role).where(Role.id == role_id)
+    )
+    role = role_result.scalar_one_or_none()
+    if not role:
+        raise HTTPException(404, "角色不存在")
+    
+    # 检查是否已存在权限
+    from backend.app.models.knowledge_base import KnowledgeBaseRole
+    existing_result = await db.execute(
+        select(KnowledgeBaseRole).where(
+            KnowledgeBaseRole.kb_id == kb_id,
+            KnowledgeBaseRole.role_id == role_id,
+            KnowledgeBaseRole.is_deleted == False
+        )
+    )
+    if existing_result.scalars().first():
+        raise HTTPException(400, "该角色已拥有访问权限")
+    
+    # 检查是否存在已删除的权限记录
+    deleted_result = await db.execute(
+        select(KnowledgeBaseRole).where(
+            KnowledgeBaseRole.kb_id == kb_id,
+            KnowledgeBaseRole.role_id == role_id,
+            KnowledgeBaseRole.is_deleted == True
+        )
+    )
+    deleted_record = deleted_result.scalars().first()
+    
+    if deleted_record:
+        # 如果存在已删除的记录，更新它
+        deleted_record.is_deleted = False
+        deleted_record.created_at = datetime.utcnow()
+    else:
+        # 否则创建新记录
+        kb_role = KnowledgeBaseRole(
+            kb_id=kb_id,
+            role_id=role_id
+        )
+        db.add(kb_role)
+    
+    await db.commit()
+    
+    return Response(data={"message": "权限添加成功"})
+
+
+@router.delete("/knowledge-base/{kb_id}/permissions/{role_id}", response_model=Response)
+async def remove_kb_permission(
+    kb_id: str,
+    role_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """从知识库移除角色权限"""
+    # 验证知识库存在
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    if not kb or kb.owner_id != user.id:
+        raise HTTPException(404, "知识库不存在")
+    
+    # 查找并删除权限
+    from sqlalchemy import update
+    from backend.app.models.knowledge_base import KnowledgeBaseRole
+    result = await db.execute(
+        update(KnowledgeBaseRole)
+        .where(
+            KnowledgeBaseRole.kb_id == kb_id,
+            KnowledgeBaseRole.role_id == role_id,
+            KnowledgeBaseRole.is_deleted == False
+        )
+        .values(is_deleted=True)
+    )
+    
+    if result.rowcount == 0:
+        raise HTTPException(404, "权限不存在")
+    
+    await db.commit()
+    return Response(data={"message": "权限移除成功"})

@@ -19,6 +19,22 @@ export interface LoginResponse {
   user: User
 }
 
+// 标签类型
+export interface Tag {
+  id: string
+  name: string
+  color: string
+  is_active: boolean
+}
+
+// 领域类型
+export interface Domain {
+  id: string
+  name: string
+  description: string
+  is_active: boolean
+}
+
 // 知识库类型
 export interface KnowledgeBase {
   id: string
@@ -37,6 +53,8 @@ export interface KnowledgeBase {
   doc_count: number
   chunk_count: number
   owner_id: string
+  tags?: Tag[]
+  domains?: Domain[]
 }
 
 // 文档类型

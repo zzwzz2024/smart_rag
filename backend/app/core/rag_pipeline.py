@@ -104,6 +104,7 @@ class RAGPipeline:
         use_llm: bool = True,
         db = None,
         domain: str = None,  # 新增领域参数
+        user = None,  # 新增用户参数，用于权限检查
     ) -> GenerationResult:
         """
         执行完整 RAG 流程
@@ -145,6 +146,63 @@ class RAGPipeline:
             domain=domain,  # 传递领域参数
         )
         logger.info(f"[RAG] Retrieved {len(retrieved)} chunks")
+
+        # ── 权限检查 ──
+        if db and user:
+            logger.info("[RAG] Checking document permissions")
+            from backend.app.models.document import Document, DocumentChunk
+            from backend.app.models.knowledge_base import KnowledgeBase
+            from sqlalchemy import select, exists
+            
+            # 过滤出用户有权限的chunks
+            authorized_chunks = []
+            
+            for chunk in retrieved:
+                try:
+                    # 获取chunk对应的文档ID
+                    chunk_result = await db.execute(
+                        select(DocumentChunk.doc_id).where(DocumentChunk.id == chunk.chunk_id)
+                    )
+                    doc_id = chunk_result.scalar_one_or_none()
+                    
+                    if doc_id:
+                        # 获取文档信息
+                        doc_result = await db.execute(
+                            select(Document).where(Document.id == doc_id, Document.is_deleted == False)
+                        )
+                        doc = doc_result.scalar_one_or_none()
+                        
+                        if doc:
+                            # 获取知识库信息
+                            kb_result = await db.execute(
+                                select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+                            )
+                            kb = kb_result.scalar_one_or_none()
+                            
+                            if kb:
+                                # 检查权限
+                                if kb.owner_id == user.id:
+                                    # 用户是知识库所有者，有权限
+                                    authorized_chunks.append(chunk)
+                                else:
+                                    # 检查用户角色是否有权限
+                                    if user.role_id:
+                                        from backend.app.models.document import DocumentRole
+                                        role_result = await db.execute(
+                                            select(DocumentRole).where(
+                                                DocumentRole.doc_id == doc_id,
+                                                DocumentRole.role_id == user.role_id,
+                                                DocumentRole.is_deleted == False
+                                            )
+                                        )
+                                        if role_result.scalar_one_or_none():
+                                            # 用户角色有权限
+                                            authorized_chunks.append(chunk)
+                except Exception as e:
+                    logger.error(f"Permission check failed for chunk {chunk.chunk_id}: {e}")
+            
+            retrieved = authorized_chunks
+            logger.info(f"[RAG] After permission check: {len(retrieved)} chunks")
 
         if not retrieved:
             logger.warning("[RAG] No chunks retrieved")
@@ -258,6 +316,7 @@ class RAGPipeline:
         top_k: Optional[int] = None,
         retrieval_mode: str = "hybrid",
         domain: str = None,  # 新增领域参数
+        user = None,  # 新增用户参数，用于权限检查
     ):
         """流式 RAG"""
         top_k = top_k or settings.RERANK_TOP_K
@@ -284,6 +343,63 @@ class RAGPipeline:
             top_k=settings.RETRIEVAL_TOP_K, mode=retrieval_mode,
             domain=domain,  # 传递领域参数
         )
+
+        # ── 权限检查 ──
+        if db and user:
+            logger.info("[RAG Stream] Checking document permissions")
+            from backend.app.models.document import Document, DocumentChunk
+            from backend.app.models.knowledge_base import KnowledgeBase
+            from sqlalchemy import select
+            
+            # 过滤出用户有权限的chunks
+            authorized_chunks = []
+            
+            for chunk in retrieved:
+                try:
+                    # 获取chunk对应的文档ID
+                    chunk_result = await db.execute(
+                        select(DocumentChunk.doc_id).where(DocumentChunk.id == chunk.chunk_id)
+                    )
+                    doc_id = chunk_result.scalar_one_or_none()
+                    
+                    if doc_id:
+                        # 获取文档信息
+                        doc_result = await db.execute(
+                            select(Document).where(Document.id == doc_id, Document.is_deleted == False)
+                        )
+                        doc = doc_result.scalar_one_or_none()
+                        
+                        if doc:
+                            # 获取知识库信息
+                            kb_result = await db.execute(
+                                select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+                            )
+                            kb = kb_result.scalar_one_or_none()
+                            
+                            if kb:
+                                # 检查权限
+                                if kb.owner_id == user.id:
+                                    # 用户是知识库所有者，有权限
+                                    authorized_chunks.append(chunk)
+                                else:
+                                    # 检查用户角色是否有权限
+                                    if user.role_id:
+                                        from backend.app.models.document import DocumentRole
+                                        role_result = await db.execute(
+                                            select(DocumentRole).where(
+                                                DocumentRole.doc_id == doc_id,
+                                                DocumentRole.role_id == user.role_id,
+                                                DocumentRole.is_deleted == False
+                                            )
+                                        )
+                                        if role_result.scalar_one_or_none():
+                                            # 用户角色有权限
+                                            authorized_chunks.append(chunk)
+                except Exception as e:
+                    logger.error(f"Permission check failed for chunk {chunk.chunk_id}: {e}")
+            
+            retrieved = authorized_chunks
+            logger.info(f"[RAG Stream] After permission check: {len(retrieved)} chunks")
 
         # 重排序
         filtered = retrieved

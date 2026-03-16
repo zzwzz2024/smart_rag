@@ -36,6 +36,22 @@ class Document(Base):
     chunks = relationship(
         "DocumentChunk", back_populates="document", cascade="all, delete-orphan"
     )
+    roles = relationship("Role", secondary="kb_document_roles", back_populates="documents")
+
+
+class DocumentRole(Base):
+    __tablename__ = "kb_document_roles"
+
+    doc_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("kb_documents.id"), primary_key=True
+    )
+    role_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("sys_roles.id"), primary_key=True
+    )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow
+    )
 
 
 class DocumentChunk(Base):

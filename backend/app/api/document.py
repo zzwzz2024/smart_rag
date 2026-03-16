@@ -3,15 +3,17 @@
 """
 import os
 import uuid
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import get_db, async_session_factory
 from backend.app.models.user import User
-from backend.app.models.document import Document, DocumentChunk
+from backend.app.models.document import Document, DocumentChunk, DocumentRole
 from backend.app.models.knowledge_base import KnowledgeBase
 from backend.app.models.model import Model
-from backend.app.schemas.document import DocumentResponse, ChunkResponse
+from backend.app.models.system import Role
+from backend.app.schemas.document import DocumentResponse, ChunkResponse, DocumentPermissionResponse
 from backend.app.utils.auth import get_current_user
 from backend.app.services.doc_service import process_document
 from backend.app.core.vector_store import VectorStore
@@ -20,6 +22,11 @@ import backend.app.services.chat_service as chat_service
 from backend.app.core.rag_pipeline import RAGPipeline
 from backend.app.models.response_model import Response
 from loguru import logger
+# 获取文档的角色权限
+from backend.app.schemas.document import DocumentPermissionResponse
+from sqlalchemy import or_, and_, func, exists
+from datetime import datetime
+from sqlalchemy import update
 
 router = APIRouter()
 settings = get_settings()
@@ -162,39 +169,62 @@ async def list_documents(
     user: User = Depends(get_current_user),
 ):
     """获取知识库下的文档列表"""
-    from sqlalchemy import or_, and_, func
-    from datetime import datetime
-    
+
     # 构建查询
-    stmt = select(Document).where(Document.kb_id == kb_id, Document.is_deleted == False)
+    base_stmt = select(Document).where(Document.kb_id == kb_id, Document.is_deleted == False)
+    
+    # 根据用户角色过滤文档
+    # 1. 如果用户是知识库所有者，能看到所有文档
+    # 2. 否则，只能看到与用户角色关联的文档
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    
+    if not kb:
+        raise HTTPException(404, "知识库不存在")
+    
+    if kb.owner_id != user.id:
+        # 用户不是所有者，需要根据角色过滤
+        if user.role_id:
+            # 构建子查询：获取用户角色可访问的文档
+            role_stmt = select(DocumentRole.doc_id).where(
+                DocumentRole.role_id == user.role_id
+            )
+            base_stmt = base_stmt.where(
+                Document.id.in_(role_stmt)
+            )
+        else:
+            # 没有角色的用户看不到任何文档
+            base_stmt = base_stmt.where(False)
     
     # 添加文件名过滤
     if filename:
-        stmt = stmt.where(Document.filename.ilike(f"%{filename}%"))
+        base_stmt = base_stmt.where(Document.filename.ilike(f"%{filename}%"))
     
     # 添加创建日期过滤
     if created_from:
         try:
             from_date = datetime.fromisoformat(created_from)
-            stmt = stmt.where(Document.created_at >= from_date)
+            base_stmt = base_stmt.where(Document.created_at >= from_date)
         except:
             pass
     
     if created_to:
         try:
             to_date = datetime.fromisoformat(created_to)
-            stmt = stmt.where(Document.created_at <= to_date)
+            base_stmt = base_stmt.where(Document.created_at <= to_date)
         except:
             pass
     
     # 计算总数
-    count_stmt = select(func.count()).select_from(stmt.subquery())
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
     count_result = await db.execute(count_stmt)
     total = count_result.scalar()
     
     # 添加分页
     offset = (page - 1) * page_size
-    stmt = stmt.offset(offset).limit(page_size).order_by(Document.created_at.desc())
+    stmt = base_stmt.offset(offset).limit(page_size).order_by(Document.created_at.desc())
     
     # 执行查询
     result = await db.execute(stmt)
@@ -217,6 +247,39 @@ async def get_chunks(
     user: User = Depends(get_current_user),
 ):
     """获取文档的分块列表"""
+    # 验证用户是否有权限访问该文档
+    doc_result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.is_deleted == False)
+    )
+    doc = doc_result.scalar_one_or_none()
+    
+    if not doc:
+        raise HTTPException(404, "文档不存在")
+    
+    # 检查权限
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    
+    if not kb:
+        raise HTTPException(404, "知识库不存在")
+    
+    if kb.owner_id != user.id:
+        # 用户不是所有者，需要检查角色权限
+        if user.role_id:
+            # 检查用户角色是否有权限访问该文档
+            role_result = await db.execute(
+                select(DocumentRole).where(
+                    DocumentRole.doc_id == doc_id,
+                    DocumentRole.role_id == user.role_id
+                )
+            )
+            if not role_result.scalar_one_or_none():
+                raise HTTPException(403, "无权限访问该文档")
+        else:
+            raise HTTPException(403, "无权限访问该文档")
+    
     result = await db.execute(
         select(DocumentChunk)
         .where(DocumentChunk.doc_id == doc_id, DocumentChunk.is_deleted == False)
@@ -238,6 +301,18 @@ async def delete_document(
     if not doc:
         raise HTTPException(404, "文档不存在")
 
+    # 检查权限
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    
+    if not kb:
+        raise HTTPException(404, "知识库不存在")
+    
+    if kb.owner_id != user.id:
+        raise HTTPException(403, "只有知识库所有者可以删除文档")
+
     # 删除向量
     vector_store.delete_by_doc(doc.kb_id, doc.id)
 
@@ -249,15 +324,19 @@ async def delete_document(
     doc.is_deleted = True
     
     # 标记相关的文档分块为已删除
-    from sqlalchemy import update
     await db.execute(
         update(DocumentChunk)
         .where(DocumentChunk.doc_id == doc_id)
         .values(is_deleted=True)
     )
     
-    # 更新知识库统计
-    from backend.app.models.knowledge_base import KnowledgeBase
+    # 删除文档角色关联
+    await db.execute(
+        update(DocumentRole)
+        .where(DocumentRole.doc_id == doc_id)
+        .values(is_deleted=True)
+    )
+
     kb_result = await db.execute(
         select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id)
     )
@@ -273,3 +352,157 @@ async def delete_document(
 
     await db.commit()
     return Response(data={"message": "已删除"})
+
+
+@router.get("/{doc_id}/permissions", response_model=Response)
+async def get_document_permissions(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """获取文档的角色权限列表"""
+    # 验证文档存在
+    doc_result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.is_deleted == False)
+    )
+    doc = doc_result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "文档不存在")
+    
+    # 检查权限（只有知识库所有者可以管理权限）
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    if not kb or kb.owner_id != user.id:
+        raise HTTPException(403, "只有知识库所有者可以管理文档权限")
+    
+    result = await db.execute(
+        select(Role, DocumentRole)
+        .join(DocumentRole, Role.id == DocumentRole.role_id)
+        .where(
+            DocumentRole.doc_id == doc_id,
+            DocumentRole.is_deleted == False
+        )
+    )
+    permissions = []
+    for role, doc_role in result.all():
+        permissions.append({
+            "role_id": role.id,
+            "role_name": role.name,
+            "role_code": role.code
+        })
+    
+    return Response(data=permissions)
+
+
+@router.post("/{doc_id}/permissions", response_model=Response)
+async def add_document_permission(
+    doc_id: str,
+    role_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """为文档添加角色权限"""
+    # 验证文档存在
+    doc_result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.is_deleted == False)
+    )
+    doc = doc_result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "文档不存在")
+    
+    # 检查权限（只有知识库所有者可以管理权限）
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    if not kb or kb.owner_id != user.id:
+        raise HTTPException(403, "只有知识库所有者可以管理文档权限")
+    
+    # 验证角色存在
+    role_result = await db.execute(
+        select(Role).where(Role.id == role_id)
+    )
+    role = role_result.scalar_one_or_none()
+    if not role:
+        raise HTTPException(404, "角色不存在")
+    
+    # 检查是否已存在权限
+    existing_result = await db.execute(
+        select(DocumentRole).where(
+            DocumentRole.doc_id == doc_id,
+            DocumentRole.role_id == role_id,
+            DocumentRole.is_deleted == False
+        )
+    )
+    if existing_result.scalars().first():
+        raise HTTPException(400, "该角色已拥有访问权限")
+    
+    # 检查是否存在已删除的权限记录
+    deleted_result = await db.execute(
+        select(DocumentRole).where(
+            DocumentRole.doc_id == doc_id,
+            DocumentRole.role_id == role_id,
+            DocumentRole.is_deleted == True
+        )
+    )
+    deleted_record = deleted_result.scalars().first()
+    
+    if deleted_record:
+        # 如果存在已删除的记录，更新它
+        deleted_record.is_deleted = False
+        deleted_record.created_at = datetime.utcnow()
+    else:
+        # 否则创建新记录
+        doc_role = DocumentRole(
+            doc_id=doc_id,
+            role_id=role_id
+        )
+        db.add(doc_role)
+    
+    await db.commit()
+    
+    return Response(data={"message": "权限添加成功"})
+
+
+@router.delete("/{doc_id}/permissions/{role_id}", response_model=Response)
+async def remove_document_permission(
+    doc_id: str,
+    role_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """从文档移除角色权限"""
+    # 验证文档存在
+    doc_result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.is_deleted == False)
+    )
+    doc = doc_result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "文档不存在")
+    
+    # 检查权限（只有知识库所有者可以管理权限）
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    if not kb or kb.owner_id != user.id:
+        raise HTTPException(403, "只有知识库所有者可以管理文档权限")
+    
+    # 查找并删除权限
+    result = await db.execute(
+        update(DocumentRole)
+        .where(
+            DocumentRole.doc_id == doc_id,
+            DocumentRole.role_id == role_id,
+            DocumentRole.is_deleted == False
+        )
+        .values(is_deleted=True)
+    )
+    
+    if result.rowcount == 0:
+        raise HTTPException(404, "权限不存在")
+    
+    await db.commit()
+    return Response(data={"message": "权限移除成功"})

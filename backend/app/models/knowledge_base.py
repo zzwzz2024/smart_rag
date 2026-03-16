@@ -70,3 +70,19 @@ class KnowledgeBase(Base):
         secondary=knowledge_base_domain_association,
         back_populates="knowledge_bases"
     )
+    roles = relationship("Role", secondary="kb_knowledge_base_roles", back_populates="knowledge_bases")
+
+
+class KnowledgeBaseRole(Base):
+    __tablename__ = "kb_knowledge_base_roles"
+
+    kb_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("kb_knowledge_bases.id"), primary_key=True
+    )
+    role_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("sys_roles.id"), primary_key=True
+    )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow
+    )

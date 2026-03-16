@@ -105,7 +105,7 @@
             <div class="tag-selector">
               <el-checkbox-group v-model="newKbTagIds">
                 <el-checkbox
-                  v-for="tag in tagStore.items"
+                  v-for="tag in tagStore.tags"
                   :key="tag.id"
                   :label="tag.id"
                   :disabled="!tag.is_active"
@@ -129,7 +129,7 @@
             <div class="domain-selector">
               <el-checkbox-group v-model="newKbDomainIds">
                 <el-checkbox
-                  v-for="domain in domainStore.items"
+                  v-for="domain in domainStore.domains"
                   :key="domain.id"
                   :label="domain.id"
                   :disabled="!domain.is_active"
@@ -313,6 +313,76 @@
       </div>
     </div>
 
+    <!-- 知识库权限管理模态框 -->
+    <div v-if="showPermissionModal" class="modal-overlay" @click="showPermissionModal = false">
+      <div class="modal-content permission-modal" @click.stop>
+        <div class="modal-header">
+          <h3>知识库权限管理 - {{ selectedKnowledgeBaseForPermission?.name }}</h3>
+        </div>
+        <div class="modal-body">
+          <div v-if="isLoadingPermissions" class="loading-state">
+            <div class="loading"></div>
+            <span>加载权限中...</span>
+          </div>
+          <div v-else>
+            <!-- 已有权限列表 -->
+            <div class="permission-section">
+              <h4>已有权限</h4>
+              <div v-if="knowledgeBasePermissions.length > 0" class="permission-list">
+                <div
+                  v-for="permission in knowledgeBasePermissions"
+                  :key="permission.role_id"
+                  class="permission-item"
+                >
+                  <span class="role-info">{{ permission.role_name }} ({{ permission.role_code }})</span>
+                  <button
+                    class="btn btn-danger btn-sm"
+                    @click="removeKnowledgeBasePermission(permission.role_id)"
+                  >
+                    移除
+                  </button>
+                </div>
+              </div>
+              <div v-else class="empty-state no-permissions">
+                <p>暂无权限设置</p>
+              </div>
+            </div>
+
+            <!-- 添加权限 -->
+            <div class="permission-section" style="margin-top: 20px;">
+              <h4>添加权限</h4>
+              <div class="add-permission-form">
+                <select v-model="selectedRoleId" class="form-control">
+                  <option value="">选择角色</option>
+                  <option
+                    v-for="role in availableRoles"
+                    :key="role.id"
+                    :value="role.id"
+                  >
+                    {{ role.name }} ({{ role.code }})
+                  </option>
+                </select>
+                <button
+                  class="btn btn-primary"
+                  @click="addKnowledgeBasePermission"
+                  :disabled="!selectedRoleId"
+                >
+                  添加权限
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="showPermissionModal = false">
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 知识库列表 -->
     <div class="kb-list">
       <div
@@ -324,8 +394,16 @@
           <h3>{{ kb.name }}</h3>
           <div class="kb-card-actions">
             <button
+              class="btn btn-primary"
+              @click="manageKnowledgeBasePermissions(kb)"
+              style="margin-right: 8px;"
+            >
+              权限
+            </button>
+            <button
               class="btn btn-secondary"
               @click="editKnowledgeBase(kb)"
+              style="margin-right: 8px;"
             >
               编辑
             </button>
@@ -408,6 +486,7 @@ import { useDomainStore } from '../stores/domain'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import type { KnowledgeBase } from '../types'
 import Pagination from '../components/Pagination.vue'
+import { roleApi } from '../api/system'
 
 const route = useRoute()
 
@@ -450,6 +529,14 @@ const tagPage = ref(1)
 const tagPageSize = ref(10)
 const domainPage = ref(1)
 const domainPageSize = ref(10)
+
+// 知识库权限管理相关状态
+const showPermissionModal = ref(false)
+const selectedKnowledgeBaseForPermission = ref<any>(null)
+const knowledgeBasePermissions = ref<any[]>([])
+const availableRoles = ref<any[]>([])
+const selectedRoleId = ref('')
+const isLoadingPermissions = ref(false)
 
 // 编辑知识库
 const editKnowledgeBase = (kb: KnowledgeBase) => {
@@ -607,6 +694,86 @@ const loadData = async () => {
   }
 }
 
+// 打开知识库权限管理模态框
+const manageKnowledgeBasePermissions = async (kb: any) => {
+  selectedKnowledgeBaseForPermission.value = kb
+  showPermissionModal.value = true
+  await loadKnowledgeBasePermissions(kb.id)
+  await loadAvailableRoles()
+}
+
+// 加载知识库权限
+const loadKnowledgeBasePermissions = async (kbId: string) => {
+  isLoadingPermissions.value = true
+  try {
+    const response = await kbStore.getKnowledgeBasePermissions(kbId)
+    knowledgeBasePermissions.value = response || []
+  } catch (error: any) {
+    console.error('加载知识库权限失败:', error)
+    const errorMessage = error.response?.data?.detail || '加载知识库权限失败'
+    ElMessage.error(errorMessage)
+  } finally {
+    isLoadingPermissions.value = false
+  }
+}
+
+// 加载可用角色
+const loadAvailableRoles = async () => {
+  try {
+    const response = await roleApi.getRoles()
+    availableRoles.value = response || []
+  } catch (error: any) {
+    console.error('加载角色列表失败:', error)
+    const errorMessage = error.response?.data?.detail || '加载角色列表失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 添加知识库权限
+const addKnowledgeBasePermission = async () => {
+  if (!selectedKnowledgeBaseForPermission.value || !selectedRoleId.value) return
+  
+  try {
+    await kbStore.addKnowledgeBasePermission(selectedKnowledgeBaseForPermission.value.id, selectedRoleId.value)
+    ElMessage.success('权限添加成功')
+    await loadKnowledgeBasePermissions(selectedKnowledgeBaseForPermission.value.id)
+    selectedRoleId.value = ''
+  } catch (error: any) {
+    console.error('添加权限失败:', error)
+    const errorMessage = error.response?.data?.detail || '添加权限失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 移除知识库权限
+const removeKnowledgeBasePermission = async (roleId: string) => {
+  if (!selectedKnowledgeBaseForPermission.value) return
+  
+  ElMessageBox.confirm(
+    '确定要移除这个角色的访问权限吗？',
+    '移除权限确认',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  )
+    .then(async () => {
+      try {
+        await kbStore.removeKnowledgeBasePermission(selectedKnowledgeBaseForPermission.value.id, roleId)
+        ElMessage.success('权限移除成功')
+        await loadKnowledgeBasePermissions(selectedKnowledgeBaseForPermission.value.id)
+      } catch (error: any) {
+        console.error('移除权限失败:', error)
+        const errorMessage = error.response?.data?.detail || '移除权限失败'
+        ElMessage.error(errorMessage)
+      }
+    })
+    .catch(() => {
+      // 用户取消操作
+    })
+}
+
 // 分页处理
 const handleSizeChange = (size: number) => {
   pageSize.value = size
@@ -696,7 +863,7 @@ watch(
   background-color: white;
   border-radius: 8px;
   width: 100%;
-  max-width: 500px;
+  max-width: 900px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -744,7 +911,7 @@ watch(
 /* 知识库列表样式 */
 .kb-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   gap: 20px;
 }
 
@@ -752,7 +919,7 @@ watch(
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  padding: 20px;
+  padding: 24px;
   transition: all 0.2s ease;
 }
 
@@ -934,5 +1101,82 @@ watch(
   .pagination {
     justify-content: center;
   }
+}
+
+/* 权限管理模态框样式 */
+.permission-modal {
+  width: 90%;
+  max-width: 700px;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.permission-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.permission-list {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 20px;
+}
+
+.permission-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.permission-item:last-child {
+  border-bottom: none;
+}
+
+.role-info {
+  font-size: 14px;
+  color: #333;
+}
+
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.add-permission-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+}
+
+.add-permission-form select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* 暂无权限提示样式 */
+.no-permissions {
+  background-color: #fff3cd;
+  border: 1px solid #ffeeba;
+  color: #856404;
+  padding: 20px;
+  border-radius: 4px;
+  text-align: center;
+  font-weight: 500;
+  font-size: 16px;
 }
 </style>

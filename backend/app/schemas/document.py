@@ -27,3 +27,12 @@ class ChunkResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class DocumentPermissionResponse(BaseModel):
+    role_id: str = Field(..., description="角色ID")
+    role_name: str = Field(..., description="角色名称")
+    role_code: str = Field(..., description="角色代码")
+
+    class Config:
+        from_attributes = True

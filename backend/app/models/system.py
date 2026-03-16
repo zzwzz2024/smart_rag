@@ -24,6 +24,8 @@ class Role(Base):
     # 关系
     users = relationship("User", back_populates="user_role", foreign_keys="User.role_id")
     permissions = relationship("Permission", secondary="sys_role_permissions", back_populates="roles")
+    documents = relationship("Document", secondary="kb_document_roles", back_populates="roles")
+    knowledge_bases = relationship("KnowledgeBase", secondary="kb_knowledge_base_roles", back_populates="roles")
 
 
 # backend/app/models/system.py

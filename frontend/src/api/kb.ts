@@ -66,5 +66,30 @@ export const kbApi = {
       url: `/kb/knowledge-base/${kbId}`,
       method: 'delete'
     })
+  },
+
+  // 获取知识库权限
+  getKnowledgeBasePermissions(kbId: string) {
+    return request({
+      url: `/kb/knowledge-base/${kbId}/permissions`,
+      method: 'get'
+    })
+  },
+
+  // 添加知识库权限
+  addKnowledgeBasePermission(kbId: string, roleId: string) {
+    return request({
+      url: `/kb/knowledge-base/${kbId}/permissions`,
+      method: 'post',
+      params: { role_id: roleId }
+    })
+  },
+
+  // 移除知识库权限
+  removeKnowledgeBasePermission(kbId: string, roleId: string) {
+    return request({
+      url: `/kb/knowledge-base/${kbId}/permissions/${roleId}`,
+      method: 'delete'
+    })
   }
 }

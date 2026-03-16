@@ -67,6 +67,12 @@ async def chat(
     request: ChatRequest,
     user_id: str,
 ) -> ChatResponse:
+    # 获取用户信息
+    from backend.app.models.user import User
+    user_result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = user_result.scalar_one_or_none()
     """处理用户聊天请求"""
     # 获取或创建对话
     if request.conversation_id:
@@ -181,7 +187,8 @@ async def chat(
         api_key=api_key,
         base_url=base_url,
         db=db,
-        domain=domain  # 传递领域参数
+        domain=domain,  # 传递领域参数
+        user=user  # 传递用户参数，用于权限检查
     )
 
     # 保存 AI 回复
@@ -298,6 +305,13 @@ async def chat_stream(
     if not request.kb_ids:
         raise ValueError("请选择至少一个知识库")
     
+    # 获取用户信息
+    from backend.app.models.user import User
+    user_result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = user_result.scalar_one_or_none()
+    
     # 自动获取默认的聊天模型
     result = await db.execute(
         select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
@@ -324,6 +338,8 @@ async def chat_stream(
         query=request.query,
         kb_ids=request.kb_ids,
         model_id=request.model_id,
-        domain=domain
+        domain=domain,
+        user=user,  # 传递用户参数，用于权限检查
+        db=db  # 传递数据库会话，用于权限检查
     ):
         yield token

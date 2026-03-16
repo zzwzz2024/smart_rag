@@ -32,19 +32,19 @@ export const useKbStore = defineStore('kb', {
       this.isLoading = true
       this.error = null
       try {
-        const response = await kbApi.getKnowledgeBases(params)
+        const data = await kbApi.getKnowledgeBases(params)
         // 检查响应格式
-        if (response.items) {
+        if (data.items) {
           // 后端返回了分页格式
-          this.knowledgeBases = response.items
+          this.knowledgeBases = data.items
           this.kbPagination = {
-            total: response.total || 0,
+            total: data.total || 0,
             page: params?.page || 1,
             pageSize: params?.page_size || 10,
-            totalPages: Math.ceil((response.total || 0) / (params?.page_size || 10))
+            totalPages: Math.ceil((data.total || 0) / (params?.page_size || 10))
           }
         }
-        return response
+        return data
       } catch (error: any) {
         this.error = error.response?.data?.message || '获取知识库列表失败'
         throw error
@@ -132,10 +132,8 @@ export const useKbStore = defineStore('kb', {
       this.isLoading = true
       this.error = null
       try {
-        const response = await documentApi.getDocuments(kbId, params)
-        console.log('获取文档列表成功', response)
-        // 由于响应拦截器已经处理了响应格式，response 已经是 data.data
-        const result = response
+        const result = await documentApi.getDocuments(kbId, params)
+        console.log('获取文档列表成功', result)
         // 使用 $patch 方法更新状态，确保响应式
         this.$patch({
           documents: result.data || [],
@@ -161,8 +159,7 @@ export const useKbStore = defineStore('kb', {
       try {
         const formData = new FormData()
         formData.append('file', file)
-        const response = await documentApi.uploadDocument(kbId, formData)
-        const document = response || response
+        const document = await documentApi.uploadDocument(kbId, formData)
         // this.documents.push(document)
         if (Array.isArray(this.documents)) {
           this.documents.push(document); // document 是你收到的这个对象
@@ -214,6 +211,49 @@ export const useKbStore = defineStore('kb', {
     setCurrentKnowledgeBase(knowledgeBase: KnowledgeBase | null) {
       this.currentKnowledgeBase = knowledgeBase
       this.documents = []
+    },
+
+    // 知识库权限管理
+    async getKnowledgeBasePermissions(kbId: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        const response = await kbApi.getKnowledgeBasePermissions(kbId)
+        return response
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '获取知识库权限失败'
+        throw error
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async addKnowledgeBasePermission(kbId: string, roleId: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        const response = await kbApi.addKnowledgeBasePermission(kbId, roleId)
+        return response
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '添加知识库权限失败'
+        throw error
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async removeKnowledgeBasePermission(kbId: string, roleId: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        const response = await kbApi.removeKnowledgeBasePermission(kbId, roleId)
+        return response
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '移除知识库权限失败'
+        throw error
+      } finally {
+        this.isLoading = false
+      }
     }
   }
 })
