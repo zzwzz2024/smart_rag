@@ -125,9 +125,15 @@ const updateForm = ref({
 // 获取领域列表
 const getDomains = async () => {
   try {
-    const response = await domainApi.getDomains()
-    domains.value = response
-    total.value = response.length
+    const skip = (currentPage.value - 1) * pageSize.value
+    const response = await domainApi.getDomains(skip, pageSize.value)
+    console.log(response)
+    // 检查响应格式
+    if (response.items) {
+      // 后端返回了分页格式
+      domains.value = response.items
+      total.value = response.total
+    }
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail || '获取领域列表失败')
   }

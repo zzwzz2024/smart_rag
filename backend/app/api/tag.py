@@ -4,9 +4,11 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from backend.app.database import get_db
 from backend.app.models.user import User
+from backend.app.models.tag import Tag
 from backend.app.schemas.tag import TagCreate, TagResponse, TagUpdate
 from backend.app.services.tag_service import create_tag, get_tags, get_tag, update_tag, delete_tag
 from backend.app.utils.auth import get_current_user
@@ -34,8 +36,18 @@ async def get_tags_api(
     user: User = Depends(get_current_user)
 ):
     """获取标签列表"""
+    from sqlalchemy import func
+    # 获取标签列表
     tags = await get_tags(db, skip, limit)
-    return Response(data=[TagResponse.model_validate(tag) for tag in tags])
+    # 获取总数量
+    total_result = await db.execute(
+        select(func.count(Tag.id)).where(Tag.is_deleted == False)
+    )
+    total = total_result.scalar() or 0
+    return Response(data={
+        "items": [TagResponse.model_validate(tag) for tag in tags],
+        "total": total
+    })
 
 
 @router.get("/{tag_id}", response_model=Response)

@@ -20,10 +20,11 @@ interface DomainUpdate {
 
 export const domainApi = {
   // 获取领域列表
-  getDomains() {
+  getDomains(skip = 0, limit = 10) {
     return request({
       url: '/domain',
-      method: 'get'
+      method: 'get',
+      params: { skip, limit }
     })
   },
 

@@ -440,35 +440,52 @@ async def get_eval_report(
 async def get_evaluations(
     kb_id: str = None,
     query: str = None,
+    skip: int = 0,
+    limit: int = 10,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """获取评估列表"""
     import logging
+    from sqlalchemy import func
     logger = logging.getLogger(__name__)
     
-    logger.info(f"接收到的参数: kb_id={kb_id}, query={query}")
+    logger.info(f"接收到的参数: kb_id={kb_id}, query={query}, skip={skip}, limit={limit}")
     
     from sqlalchemy import or_
     
-    db_query = select(Evaluation).where(Evaluation.is_deleted == False).order_by(Evaluation.created_at.desc())
+    # 构建查询
+    base_query = select(Evaluation).where(Evaluation.is_deleted == False)
     
     # 按知识库ID过滤
     if kb_id:
         logger.info(f"应用知识库过滤: {kb_id}")
-        db_query = db_query.where(Evaluation.kb_id == kb_id)
+        base_query = base_query.where(Evaluation.kb_id == kb_id)
     
     # 按问题名称过滤
     if query:
         logger.info(f"应用查询过滤: {query}")
-        db_query = db_query.where(Evaluation.query.ilike(f"%{query}%"))
+        base_query = base_query.where(Evaluation.query.ilike(f"%{query}%"))
+    
+    # 计算总数
+    count_query = select(func.count()).select_from(base_query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar()
+    
+    # 应用排序和分页
+    db_query = base_query.order_by(Evaluation.created_at.desc()).offset(skip).limit(limit)
     
     logger.info(f"生成的SQL查询: {db_query}")
     
     result = await db.execute(db_query)
     evaluations = result.scalars().all()
-    logger.info(f"查询结果数量: {len(evaluations)}")
-    return Response(data=[EvalResponse.model_validate(eval) for eval in evaluations])
+    logger.info(f"查询结果数量: {len(evaluations)}, 总数: {total}")
+    
+    # 返回分页格式
+    return Response(data={
+        "items": [EvalResponse.model_validate(eval) for eval in evaluations],
+        "total": total
+    })
 
 
 @router.post("", response_model=Response)

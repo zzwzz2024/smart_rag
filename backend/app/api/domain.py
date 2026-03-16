@@ -4,9 +4,11 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 
 from backend.app.database import get_db
 from backend.app.models.user import User
+from backend.app.models.domain import Domain
 from backend.app.schemas.domain import DomainCreate, DomainResponse, DomainUpdate
 from backend.app.services.domain_service import create_domain, get_domains, get_domain, update_domain, delete_domain
 from backend.app.utils.auth import get_current_user
@@ -34,8 +36,17 @@ async def get_domains_api(
     user: User = Depends(get_current_user)
 ):
     """获取领域列表"""
+    # 获取领域列表
     domains = await get_domains(db, skip, limit)
-    return Response(data=[DomainResponse.model_validate(domain) for domain in domains])
+    # 获取总数量
+    total_result = await db.execute(
+        select(func.count(Domain.id)).where(Domain.is_deleted == False)
+    )
+    total = total_result.scalar() or 0
+    return Response(data={
+        "items": [DomainResponse.model_validate(domain) for domain in domains],
+        "total": total
+    })
 
 
 @router.get("/{domain_id}", response_model=Response)

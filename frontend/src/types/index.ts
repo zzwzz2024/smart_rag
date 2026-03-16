@@ -87,12 +87,14 @@ export interface Conversation {
 
 // 评估类型
 export interface Evaluation {
-  id: number
+  id: string | number
   query: string
   reference_answer: string
   rag_answer: string
   score: number
   created_at: string
+  kb_id?: string
+  model_id?: string
 }
 
 // API响应类型

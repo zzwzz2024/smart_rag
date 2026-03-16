@@ -3,10 +3,14 @@ import type { KnowledgeBase } from '../types'
 
 export const kbApi = {
   // 获取知识库列表
-  getKnowledgeBases() {
-    return request<KnowledgeBase[]>({
+  getKnowledgeBases(params?: {
+    page?: number
+    page_size?: number
+  }) {
+    return request({
       url: '/kb/knowledge-base',
-      method: 'get'
+      method: 'get',
+      params
     })
   },
 

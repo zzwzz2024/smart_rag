@@ -175,10 +175,24 @@ async def create_kb(
 
 @router.get("/knowledge-base", response_model=Response)
 async def list_kbs(
+    page: int = 1,
+    page_size: int = 10,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """获取知识库列表"""
+    from sqlalchemy import func
+    
+    # 计算总数
+    count_query = select(func.count(KnowledgeBase.id)).where(
+        KnowledgeBase.owner_id == user.id,
+        KnowledgeBase.is_deleted == False
+    )
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
+    
+    # 分页查询
+    offset = (page - 1) * page_size
     result = await db.execute(
         select(KnowledgeBase)
         .options(
@@ -187,6 +201,8 @@ async def list_kbs(
         )
         .where(KnowledgeBase.owner_id == user.id, KnowledgeBase.is_deleted == False)
         .order_by(KnowledgeBase.updated_at.desc())
+        .offset(offset)
+        .limit(page_size)
     )
     kbs = result.scalars().all()
     
@@ -216,7 +232,11 @@ async def list_kbs(
         }
         kb_list.append(kb_dict)
     
-    return Response(data=kb_list)
+    # 返回分页格式
+    return Response(data={
+        "items": kb_list,
+        "total": total
+    })
 
 
 @router.get("/knowledge-base/{kb_id}", response_model=Response)

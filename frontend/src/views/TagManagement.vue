@@ -130,9 +130,15 @@ const updateForm = ref({
 // 获取标签列表
 const getTags = async () => {
   try {
-    const response = await tagApi.getTags()
-    tags.value = response
-    total.value = response.length
+    const skip = (currentPage.value - 1) * pageSize.value
+    const response = await tagApi.getTags(skip, pageSize.value)
+    console.log(response)
+    // 检查响应格式
+    if (response.items) {
+      // 后端返回了分页格式
+      tags.value = response.items
+      total.value = response.total
+    }
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail || '获取标签列表失败')
   }

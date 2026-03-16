@@ -15,17 +15,36 @@ export const useKbStore = defineStore('kb', {
       page: 1,
       pageSize: 10,
       totalPages: 0
+    },
+    kbPagination: {
+      total: 0,
+      page: 1,
+      pageSize: 10,
+      totalPages: 0
     }
   }),
 
   actions: {
-    async getKnowledgeBases() {
+    async getKnowledgeBases(params?: {
+      page?: number
+      page_size?: number
+    }) {
       this.isLoading = true
       this.error = null
       try {
-        const knowledgeBases = await kbApi.getKnowledgeBases()
-        this.knowledgeBases = knowledgeBases
-        return knowledgeBases
+        const response = await kbApi.getKnowledgeBases(params)
+        // 检查响应格式
+        if (response.items) {
+          // 后端返回了分页格式
+          this.knowledgeBases = response.items
+          this.kbPagination = {
+            total: response.total || 0,
+            page: params?.page || 1,
+            pageSize: params?.page_size || 10,
+            totalPages: Math.ceil((response.total || 0) / (params?.page_size || 10))
+          }
+        }
+        return response
       } catch (error: any) {
         this.error = error.response?.data?.message || '获取知识库列表失败'
         throw error
@@ -143,7 +162,7 @@ export const useKbStore = defineStore('kb', {
         const formData = new FormData()
         formData.append('file', file)
         const response = await documentApi.uploadDocument(kbId, formData)
-        const document = response.data || response
+        const document = response || response
         // this.documents.push(document)
         if (Array.isArray(this.documents)) {
           this.documents.push(document); // document 是你收到的这个对象

@@ -20,10 +20,11 @@ interface TagUpdate {
 
 export const tagApi = {
   // 获取标签列表
-  getTags() {
+  getTags(skip = 0, limit = 10) {
     return request({
       url: '/tag',
-      method: 'get'
+      method: 'get',
+      params: { skip, limit }
     })
   },
 

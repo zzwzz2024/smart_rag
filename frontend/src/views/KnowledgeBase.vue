@@ -348,6 +348,19 @@
         <span>加载中...</span>
       </div>
     </div>
+    
+    <!-- 分页 -->
+    <div class="pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next, jumper"
+        :total="kbStore.kbPagination.total"
+        @size-change="handleSizeChange"
+        @current-change="handleCurrentChange"
+      />
+    </div>
   </div>
 </template>
 
@@ -392,6 +405,10 @@ const editKbChunkOverlap = ref(64)
 const editKbChunkMethod = ref('smart')
 const editKbTagIds = ref<string[]>([])
 const editKbDomainIds = ref<string[]>([])
+
+// 分页相关
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 // 编辑知识库
 const editKnowledgeBase = (kb: KnowledgeBase) => {
@@ -499,7 +516,7 @@ const formatTime = (timeString: string): string => {
 const loadData = async () => {
   try {
     await Promise.all([
-      kbStore.getKnowledgeBases(),
+      kbStore.getKnowledgeBases({ page: currentPage.value, page_size: pageSize.value }),
       modelStore.getEmbeddingModels(),
       modelStore.getRerankModels(),
       tagStore.getTags(),
@@ -510,6 +527,18 @@ const loadData = async () => {
     const errorMessage = error.response?.data?.detail || '加载数据失败'
     ElMessage.error(errorMessage)
   }
+}
+
+// 分页处理
+const handleSizeChange = (size: number) => {
+  pageSize.value = size
+  currentPage.value = 1
+  loadData()
+}
+
+const handleCurrentChange = (current: number) => {
+  currentPage.value = current
+  loadData()
 }
 
 // 加载知识库列表
@@ -753,6 +782,13 @@ watch(
   color: #666;
 }
 
+/* 分页样式 */
+.pagination {
+  margin-top: 30px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .kb-list {
@@ -773,6 +809,10 @@ watch(
   .tag-selector,
   .domain-selector {
     max-height: 100px;
+  }
+  
+  .pagination {
+    justify-content: center;
   }
 }
 </style>

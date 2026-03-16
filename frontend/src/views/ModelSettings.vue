@@ -68,6 +68,19 @@
       </el-table-column>
     </el-table>
     
+    <!-- 分页 -->
+    <div class="pagination">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next, jumper"
+        :total="total"
+        @size-change="handleSizeChange"
+        @current-change="handleCurrentChange"
+      />
+    </div>
+    
     <!-- 添加/编辑模型对话框 -->
     <el-dialog
       v-model="dialogVisible"
@@ -219,6 +232,11 @@ const modelFormRef = ref()
 const models = ref<Model[]>([])
 const vendors = ref<ModelVendor[]>([])
 
+// 分页相关
+const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
+
 // 表单验证规则
 const modelRules = {
   name: [
@@ -231,7 +249,7 @@ const modelRules = {
 
 // 过滤当前类型的模型
 const filteredModels = computed(() => {
-  return models.value.filter(model => model.type === currentModelType.value)
+  return models.value
 })
 
 // 获取页面标题
@@ -425,10 +443,11 @@ const loadModels = async () => {
   try {
     const response = await modelApi.getModels({
       type: currentModelType.value,
-      page: 1,
-      page_size: 100 // 加载足够多的模型
+      page: currentPage.value,
+      page_size: pageSize.value
     })
     models.value = response.items
+    total.value = response.total
   } catch (error) {
     console.error('获取模型列表失败:', error)
     ElMessage.error('获取模型列表失败')
@@ -463,6 +482,18 @@ const setDefaultModel = async (modelId: string) => {
   }
 }
 
+// 分页处理
+const handleSizeChange = (size: number) => {
+  pageSize.value = size
+  currentPage.value = 1
+  loadModels()
+}
+
+const handleCurrentChange = (current: number) => {
+  currentPage.value = current
+  loadModels()
+}
+
 // 监听路由参数变化
 // const router = useRouter()
 watch(
@@ -476,6 +507,9 @@ watch(
     if (type && ['embedding', 'chat', 'rerank'].includes(type as string)) {
       console.log('检测到 type 变化:', type)
       currentModelType.value = type as 'embedding' | 'chat' | 'rerank'
+      // 重置分页参数
+      currentPage.value = 1
+      pageSize.value = 10
     }
 
     // 再处理刷新请求
@@ -539,6 +573,13 @@ onMounted(async () => {
   justify-content: flex-end;
 }
 
+/* 分页样式 */
+.pagination {
+  margin-top: 30px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .model-settings-container {
@@ -550,6 +591,10 @@ onMounted(async () => {
   }
   
   .model-actions {
+    justify-content: center;
+  }
+  
+  .pagination {
     justify-content: center;
   }
 }
