@@ -45,11 +45,9 @@
     
     <!-- 分页 -->
     <div class="pagination">
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
+      <Pagination
+        :current-page="currentPage"
+        :page-size="pageSize"
         :total="total"
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -99,6 +97,7 @@ import { ref, onMounted } from 'vue'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { domainApi } from '../api/domain'
+import Pagination from '../components/Pagination.vue'
 
 // 领域列表
 const domains = ref<any[]>([])

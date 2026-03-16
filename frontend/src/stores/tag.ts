@@ -6,16 +6,42 @@ export const useTagStore = defineStore('tag', {
   state: () => ({
     tags: [] as Tag[],
     isLoading: false,
-    error: null as string | null
+    error: null as string | null,
+    pagination: {
+      total: 0,
+      page: 1,
+      pageSize: 10,
+      totalPages: 0
+    }
   }),
 
   actions: {
-    async getTags() {
+    async getTags(page = 1, pageSize = 10) {
       this.isLoading = true
       this.error = null
       try {
-        const response = await tagApi.getTags()
-        this.tags = response
+        const skip = (page - 1) * pageSize
+        const response = await tagApi.getTags(skip, pageSize)
+        // 检查响应格式
+        if (response && response.items) {
+          // 后端返回了分页格式
+          this.tags = response.items
+          this.pagination = {
+            total: response.total || 0,
+            page,
+            pageSize,
+            totalPages: Math.ceil((response.total || 0) / pageSize)
+          }
+        } else {
+          // 后端返回了直接的标签列表
+          this.tags = response || response
+          this.pagination = {
+            total: this.tags.length,
+            page: 1,
+            pageSize: this.tags.length,
+            totalPages: 1
+          }
+        }
       } catch (error: any) {
         this.error = error.response?.data?.detail || '获取标签列表失败'
         console.error('获取标签列表失败:', error)
@@ -30,7 +56,7 @@ export const useTagStore = defineStore('tag', {
       try {
         const response = await tagApi.createTag(data)
         await this.getTags() // 重新获取标签列表
-        return response.data
+        return response
       } catch (error: any) {
         this.error = error.response?.data?.detail || '创建标签失败'
         console.error('创建标签失败:', error)
@@ -46,7 +72,7 @@ export const useTagStore = defineStore('tag', {
       try {
         const response = await tagApi.updateTag(tagId, data)
         await this.getTags() // 重新获取标签列表
-        return response.data
+        return response
       } catch (error: any) {
         this.error = error.response?.data?.detail || '更新标签失败'
         console.error('更新标签失败:', error)

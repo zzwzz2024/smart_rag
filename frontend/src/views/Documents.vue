@@ -87,40 +87,13 @@
         <div class="modal-footer">
           <!-- 文档块分页控件 -->
           <div class="chunk-pagination">
-            <div class="pagination-info">
-              共 {{ chunkPagination.total }} 个段落，
-              第 {{ chunkPagination.currentPage }} / {{ chunkPagination.totalPages }} 页
-            </div>
-            <div class="pagination-controls">
-              <button
-                class="btn btn-outline"
-                @click="changeChunkPage(1)"
-                :disabled="chunkPagination.currentPage === 1"
-              >
-                首页
-              </button>
-              <button
-                class="btn btn-outline"
-                @click="changeChunkPage(chunkPagination.currentPage - 1)"
-                :disabled="chunkPagination.currentPage === 1"
-              >
-                上一页
-              </button>
-              <button
-                class="btn btn-outline"
-                @click="changeChunkPage(chunkPagination.currentPage + 1)"
-                :disabled="chunkPagination.currentPage >= chunkPagination.totalPages"
-              >
-                下一页
-              </button>
-              <button
-                class="btn btn-outline"
-                @click="changeChunkPage(chunkPagination.totalPages)"
-                :disabled="chunkPagination.currentPage >= chunkPagination.totalPages"
-              >
-                末页
-              </button>
-            </div>
+            <Pagination
+              :current-page="chunkPagination.currentPage"
+              :page-size="chunkPagination.pageSize"
+              :total="chunkPagination.total"
+              @size-change="handleChunkSizeChange"
+              @current-change="changeChunkPage"
+            />
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showDocumentModal = false">
@@ -226,40 +199,13 @@
       
       <!-- 分页控件 -->
       <div v-if="selectedKnowledgeBase && kbStore.documentPagination.total > 0" class="pagination">
-        <div class="pagination-info">
-          共 {{ kbStore.documentPagination.total }} 条记录，
-          第 {{ kbStore.documentPagination.page }} / {{ kbStore.documentPagination.totalPages }} 页
-        </div>
-        <div class="pagination-controls">
-          <button
-            class="btn btn-outline"
-            @click="changePage(1)"
-            :disabled="kbStore.documentPagination.page === 1 || kbStore.isLoading"
-          >
-            首页
-          </button>
-          <button
-            class="btn btn-outline"
-            @click="changePage(kbStore.documentPagination.page - 1)"
-            :disabled="kbStore.documentPagination.page === 1 || kbStore.isLoading"
-          >
-            上一页
-          </button>
-          <button
-            class="btn btn-outline"
-            @click="changePage(kbStore.documentPagination.page + 1)"
-            :disabled="kbStore.documentPagination.page >= kbStore.documentPagination.totalPages || kbStore.isLoading"
-          >
-            下一页
-          </button>
-          <button
-            class="btn btn-outline"
-            @click="changePage(kbStore.documentPagination.totalPages)"
-            :disabled="kbStore.documentPagination.page >= kbStore.documentPagination.totalPages || kbStore.isLoading"
-          >
-            末页
-          </button>
-        </div>
+        <Pagination
+          :current-page="kbStore.documentPagination.page"
+          :page-size="searchParams.page_size"
+          :total="kbStore.documentPagination.total"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
       </div>
       
 <!--      <div v-if="kbStore.documents.length === 0 && !kbStore.isLoading" class="empty-state">-->
@@ -285,6 +231,7 @@ import { useRoute } from 'vue-router'
 import { useKbStore } from '../stores/kb'
 import { documentApi } from '../api/document'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import Pagination from '../components/Pagination.vue'
 
 const route = useRoute()
 const kbStore = useKbStore()
@@ -340,6 +287,13 @@ const calculatePaginatedChunks = () => {
 const changeChunkPage = (page: number) => {
   if (page < 1 || page > chunkPagination.value.totalPages) return
   chunkPagination.value.currentPage = page
+  calculatePaginatedChunks()
+}
+
+// 文档块分页大小变化
+const handleChunkSizeChange = (size: number) => {
+  chunkPagination.value.pageSize = size
+  chunkPagination.value.currentPage = 1
   calculatePaginatedChunks()
 }
 
@@ -445,6 +399,18 @@ const resetSearch = () => {
 const changePage = (page: number) => {
   if (page < 1 || page > kbStore.documentPagination.totalPages) return
   searchParams.value.page = page
+  searchDocuments()
+}
+
+// 分页处理
+const handleSizeChange = (size: number) => {
+  searchParams.value.page_size = size
+  searchParams.value.page = 1
+  searchDocuments()
+}
+
+const handleCurrentChange = (current: number) => {
+  searchParams.value.page = current
   searchDocuments()
 }
 
@@ -859,7 +825,7 @@ watch(
 .pagination {
   margin-top: 20px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;

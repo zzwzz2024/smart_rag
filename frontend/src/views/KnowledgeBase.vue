@@ -2,7 +2,7 @@
   <div class="kb-container">
     <div class="kb-header">
       <h2>知识库管理</h2>
-      <button class="btn btn-primary" @click="showCreateModal = true">
+      <button class="btn btn-primary" @click="openCreateModal">
         创建知识库
       </button>
     </div>
@@ -105,7 +105,7 @@
             <div class="tag-selector">
               <el-checkbox-group v-model="newKbTagIds">
                 <el-checkbox
-                  v-for="tag in tagStore.tags"
+                  v-for="tag in tagStore.items"
                   :key="tag.id"
                   :label="tag.id"
                   :disabled="!tag.is_active"
@@ -114,13 +114,22 @@
                 </el-checkbox>
               </el-checkbox-group>
             </div>
+            <div class="tag-pagination">
+              <Pagination
+                :current-page="tagPage"
+                :page-size="tagPageSize"
+                :total="tagStore.pagination.total"
+                @size-change="handleTagSizeChange"
+                @current-change="handleTagCurrentChange"
+              />
+            </div>
           </div>
           <div class="form-group">
             <label>领域</label>
             <div class="domain-selector">
               <el-checkbox-group v-model="newKbDomainIds">
                 <el-checkbox
-                  v-for="domain in domainStore.domains"
+                  v-for="domain in domainStore.items"
                   :key="domain.id"
                   :label="domain.id"
                   :disabled="!domain.is_active"
@@ -128,6 +137,15 @@
                   {{ domain.name }}
                 </el-checkbox>
               </el-checkbox-group>
+            </div>
+            <div class="domain-pagination">
+              <Pagination
+                :current-page="domainPage"
+                :page-size="domainPageSize"
+                :total="domainStore.pagination.total"
+                @size-change="handleDomainSizeChange"
+                @current-change="handleDomainCurrentChange"
+              />
             </div>
           </div>
         </form>
@@ -249,6 +267,15 @@
                 </el-checkbox>
               </el-checkbox-group>
             </div>
+            <div class="tag-pagination">
+              <Pagination
+                :current-page="tagPage"
+                :page-size="tagPageSize"
+                :total="tagStore.pagination.total"
+                @size-change="handleTagSizeChange"
+                @current-change="handleTagCurrentChange"
+              />
+            </div>
           </div>
           <div class="form-group">
             <label>领域</label>
@@ -263,6 +290,15 @@
                   {{ domain.name }}
                 </el-checkbox>
               </el-checkbox-group>
+            </div>
+            <div class="domain-pagination">
+              <Pagination
+                :current-page="domainPage"
+                :page-size="domainPageSize"
+                :total="domainStore.pagination.total"
+                @size-change="handleDomainSizeChange"
+                @current-change="handleDomainCurrentChange"
+              />
             </div>
           </div>
         </form>
@@ -351,11 +387,9 @@
     
     <!-- 分页 -->
     <div class="pagination">
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
+      <Pagination
+        :current-page="currentPage"
+        :page-size="pageSize"
         :total="kbStore.kbPagination.total"
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -373,6 +407,7 @@ import { useTagStore } from '../stores/tag'
 import { useDomainStore } from '../stores/domain'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import type { KnowledgeBase } from '../types'
+import Pagination from '../components/Pagination.vue'
 
 const route = useRoute()
 
@@ -410,6 +445,12 @@ const editKbDomainIds = ref<string[]>([])
 const currentPage = ref(1)
 const pageSize = ref(10)
 
+// 标签和领域分页
+const tagPage = ref(1)
+const tagPageSize = ref(10)
+const domainPage = ref(1)
+const domainPageSize = ref(10)
+
 // 编辑知识库
 const editKnowledgeBase = (kb: KnowledgeBase) => {
   editKbId.value = kb.id
@@ -422,6 +463,17 @@ const editKnowledgeBase = (kb: KnowledgeBase) => {
   editKbChunkMethod.value = kb.chunk_method || 'smart'
   editKbTagIds.value = kb.tags?.map(tag => tag.id) || []
   editKbDomainIds.value = kb.domains?.map(domain => domain.id) || []
+  
+  // 重置标签和领域的分页参数
+  tagPage.value = 1
+  tagPageSize.value = 10
+  domainPage.value = 1
+  domainPageSize.value = 10
+  
+  // 重新加载标签和领域列表
+  tagStore.getTags(tagPage.value, tagPageSize.value)
+  domainStore.getDomains(domainPage.value, domainPageSize.value)
+  
   showEditModal.value = true
 }
 
@@ -445,6 +497,32 @@ const confirmDeleteKnowledgeBase = async (kbId: string) => {
     .catch(() => {
       // 用户取消删除
     })
+}
+
+// 显示创建知识库模态框
+const openCreateModal = () => {
+  // 重置表单
+  newKbName.value = ''
+  newKbDescription.value = ''
+  newKbEmbeddingModelId.value = ''
+  newKbRerankModelId.value = ''
+  newKbChunkSize.value = 512
+  newKbChunkOverlap.value = 64
+  newKbChunkMethod.value = 'smart'
+  newKbTagIds.value = []
+  newKbDomainIds.value = []
+  
+  // 重置标签和领域的分页参数
+  tagPage.value = 1
+  tagPageSize.value = 10
+  domainPage.value = 1
+  domainPageSize.value = 10
+  
+  // 重新加载标签和领域列表
+  tagStore.getTags(tagPage.value, tagPageSize.value)
+  domainStore.getDomains(domainPage.value, domainPageSize.value)
+  
+  showCreateModal.value = true
 }
 
 // 创建知识库
@@ -519,8 +597,8 @@ const loadData = async () => {
       kbStore.getKnowledgeBases({ page: currentPage.value, page_size: pageSize.value }),
       modelStore.getEmbeddingModels(),
       modelStore.getRerankModels(),
-      tagStore.getTags(),
-      domainStore.getDomains()
+      tagStore.getTags(tagPage.value, tagPageSize.value),
+      domainStore.getDomains(domainPage.value, domainPageSize.value)
     ])
   } catch (error: any) {
     // 提取详细错误信息
@@ -539,6 +617,30 @@ const handleSizeChange = (size: number) => {
 const handleCurrentChange = (current: number) => {
   currentPage.value = current
   loadData()
+}
+
+// 标签分页处理
+const handleTagSizeChange = (size: number) => {
+  tagPageSize.value = size
+  tagPage.value = 1
+  tagStore.getTags(tagPage.value, tagPageSize.value)
+}
+
+const handleTagCurrentChange = (current: number) => {
+  tagPage.value = current
+  tagStore.getTags(tagPage.value, tagPageSize.value)
+}
+
+// 领域分页处理
+const handleDomainSizeChange = (size: number) => {
+  domainPageSize.value = size
+  domainPage.value = 1
+  domainStore.getDomains(domainPage.value, domainPageSize.value)
+}
+
+const handleDomainCurrentChange = (current: number) => {
+  domainPage.value = current
+  domainStore.getDomains(domainPage.value, domainPageSize.value)
 }
 
 // 加载知识库列表
@@ -787,6 +889,24 @@ watch(
   margin-top: 30px;
   display: flex;
   justify-content: flex-end;
+}
+
+/* 标签和领域分页样式 */
+.tag-pagination,
+.domain-pagination {
+  margin-top: 15px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tag-pagination .el-pagination,
+.domain-pagination .el-pagination {
+  font-size: 12px;
+}
+
+.tag-pagination .el-pagination__sizes,
+.domain-pagination .el-pagination__sizes {
+  margin-right: 10px;
 }
 
 /* 响应式设计 */

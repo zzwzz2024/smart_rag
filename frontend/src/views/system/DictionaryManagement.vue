@@ -71,11 +71,9 @@
     </div>
     
     <div class="pagination-container">
-      <el-pagination
-        v-model:current-page="pagination.currentPage"
-        v-model:page-size="pagination.pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
+      <Pagination
+        :current-page="pagination.currentPage"
+        :page-size="pagination.pageSize"
         :total="filteredDictionaries.length"
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -185,6 +183,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { dictionaryApi } from '../../api/system'
 import type { Dictionary, DictionaryItem } from '../../types/system'
 import {useRoute} from "vue-router";
+import Pagination from '../../components/Pagination.vue'
 
 // 字典数据
 const dictionaries = ref<Dictionary[]>([])

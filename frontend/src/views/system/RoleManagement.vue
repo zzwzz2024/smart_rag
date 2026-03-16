@@ -59,11 +59,9 @@
     
     <!-- 分页 -->
     <div class="role-pagination">
-      <el-pagination
-        v-model:current-page="pagination.currentPage"
-        v-model:page-size="pagination.pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
+      <Pagination
+        :current-page="pagination.currentPage"
+        :page-size="pagination.pageSize"
         :total="pagination.total"
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -157,6 +155,7 @@ import { Plus, Search, Refresh, Edit, Delete, Lock, User as UserIcon } from '@el
 import { roleApi, permissionApi, userApi } from '../../api/system'
 import type { Role, Permission, User } from '../../types/system'
 import {useRoute} from "vue-router";
+import Pagination from '../../components/Pagination.vue'
 
 // 数据
 const roles = ref<Role[]>([])
