@@ -175,14 +175,16 @@ class Generator:
                 )
 
                 relevance_result = relevance_response.choices[0].message.content.strip().lower()
+                # 构建引用（无论是否有相关内容，都返回检索到的 chunks）
+                citations = self._build_citations(retrieved_chunks)
 
-                # 如果判断为无相关内容，直接返回
+                # 如果判断为无相关内容，返回提示但保留引用信息
                 if "no" in relevance_result or "无" in relevance_result:
                     response_time = time.time() - start_time
                     return GenerationResult(
                         answer="根据提供的信息，未检索到相关内容",
                         confidence=0.3,
-                        citations=[],
+                        citations=citations,
                         response_time=response_time,
                         token_usage={"response_time": round(response_time, 2)},
                     )
@@ -203,7 +205,7 @@ class Generator:
                 confidence = self._calculate_confidence(retrieved_chunks)
 
                 # 构建引用
-                citations = self._build_citations(retrieved_chunks)
+                # citations = self._build_citations(retrieved_chunks)
 
                 token_usage = {
                     "prompt": response.usage.prompt_tokens if response.usage else 0,

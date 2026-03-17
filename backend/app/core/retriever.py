@@ -51,7 +51,8 @@ class HybridRetriever:
                 mode: str = "hybrid",
                 vector_weight: float = None,
                 keyword_weight: float = None,
-        ) -> List[RetrievalResult]:
+                doc_ids: Optional[List[str]] = None,
+    ) -> List[RetrievalResult]:
             """
             主检索入口
             1. 查询扩展与优化
@@ -110,18 +111,18 @@ class HybridRetriever:
                     continue
 
                 if mode == "vector":
-                    results = await self._vector_search(processed_query, kb_id, strategy_top_k * 3)  # 进一步扩大召回
+                    results = await self._vector_search(processed_query, kb_id, strategy_top_k * 3, doc_ids)
                 elif mode == "keyword":
-                    results = self._keyword_search(processed_query, kb_id, strategy_top_k * 3)
+                    results = self._keyword_search(processed_query, kb_id, strategy_top_k * 3, doc_ids)
                 else:
                     # 混合检索：使用扩展查询增强
                     if use_expanded_query:
                         results = await self._enhanced_hybrid_search(
-                            processed_query, expanded_queries, kb_id, strategy_top_k * 2, v_weight, k_weight
+                            processed_query, expanded_queries, kb_id, strategy_top_k * 2, v_weight, k_weight, doc_ids
                         )
                     else:
                         results = await self._hybrid_search(
-                            processed_query, kb_id, strategy_top_k * 2, v_weight, k_weight
+                            processed_query, kb_id, strategy_top_k * 2, v_weight, k_weight, doc_ids
                         )
                 all_results.extend(results)
 
@@ -223,6 +224,7 @@ class HybridRetriever:
         top_k: int,
         vector_weight: float,
         keyword_weight: float,
+        doc_ids: Optional[List[str]] = None,
     ) -> List[RetrievalResult]:
         """
         增强的混合检索
@@ -231,15 +233,15 @@ class HybridRetriever:
         3. RRF 融合
         """
         # 1. 主查询检索
-        vector_results = await self._vector_search(query, kb_id, top_k * 2)
-        keyword_results = self._keyword_search(query, kb_id, top_k * 2)
-        
+        vector_results = await self._vector_search(query, kb_id, top_k * 2, doc_ids)
+        keyword_results = self._keyword_search(query, kb_id, top_k * 2, doc_ids)
+
         # 2. 扩展查询补充（如果主查询结果少）
         if len(vector_results) < top_k or len(keyword_results) < top_k:
             logger.info("主查询结果不足，使用扩展查询补充")
-            for exp_query in expanded_queries[:2]:  # 最多用 2 个扩展查询
-                exp_vector = await self._vector_search(exp_query, kb_id, top_k)
-                exp_keyword = self._keyword_search(exp_query, kb_id, top_k)
+            for exp_query in expanded_queries[:2]:
+                exp_vector = await self._vector_search(exp_query, kb_id, top_k, doc_ids)
+                exp_keyword = self._keyword_search(exp_query, kb_id, top_k, doc_ids)
                 vector_results.extend(exp_vector)
                 keyword_results.extend(exp_keyword)
         
@@ -275,11 +277,11 @@ class HybridRetriever:
         return query
 
     async def _vector_search(
-        self, query: str, kb_id: str, top_k: int
+            self, query: str, kb_id: str, top_k: int, doc_ids: Optional[List[str]] = None
     ) -> List[RetrievalResult]:
         """向量语义检索"""
         logger.info("_vector_search 开始")
-        results = await self.vector_store.search(kb_id, query, top_k=top_k)
+        results = await self.vector_store.search(kb_id, query, top_k=top_k, doc_ids=doc_ids)
         logger.info(f"_vector_search 完成，检索到 {len(results)} 个结果")
         return [
             RetrievalResult(
@@ -294,7 +296,7 @@ class HybridRetriever:
         ]
 
     def _keyword_search(
-        self, query: str, kb_id: str, top_k: int
+            self, query: str, kb_id: str, top_k: int, doc_ids: Optional[List[str]] = None
     ) -> List[RetrievalResult]:
         """BM25 关键词检索（优化版）"""
         # 从向量库获取所有文档
@@ -306,34 +308,59 @@ class HybridRetriever:
         if not all_docs["documents"]:
             return []
 
+        # ✅ 如果有 doc_ids 过滤，先过滤文档
+        if doc_ids:
+            filtered_docs = []
+            filtered_ids = []
+            filtered_metadatas = []
+
+            for i, doc_id in enumerate(all_docs["ids"]):
+                # 从 metadata 中获取 doc_id
+                meta = all_docs["metadatas"][i] if all_docs["metadatas"] else {}
+                meta_doc_id = meta.get("doc_id")
+
+                if meta_doc_id in doc_ids:
+                    filtered_docs.append(all_docs["documents"][i])
+                    filtered_ids.append(doc_id)
+                    filtered_metadatas.append(meta)
+
+            if not filtered_docs:
+                logger.info(f"文档 ID 过滤后无结果")
+                return []
+
+            all_docs["documents"] = filtered_docs
+            all_docs["ids"] = filtered_ids
+            all_docs["metadatas"] = filtered_metadatas
+            logger.info(f"文档 ID 过滤后剩余 {len(filtered_docs)} 个文档")
+
         # 中文分词优化
         tokenized_corpus = [
             list(jieba.cut(doc)) for doc in all_docs["documents"]
         ]
-        
+
         # 查询分词：添加关键词权重
         query_words = list(jieba.cut(query))
         # 提取关键词并加权（重复出现）
-        keywords = jieba.analyse.extract_tags(query, topK=10)  # 增加关键词数量
+        keywords = jieba.analyse.extract_tags(query, topK=10)
         weighted_query = []
         for word in query_words:
             if word in keywords:
-                weighted_query.extend([word] * 3)  # 关键词重复 3 次，增加权重
+                weighted_query.extend([word] * 3)
             else:
                 weighted_query.append(word)
-        
+
         # 增加音乐奖项相关术语的权重
         award_terms = ["金曲奖", "台湾金曲奖", "获奖", "奖项", "年度歌曲", "音乐录影带"]
         for term in award_terms:
             if term in query:
                 weighted_query.extend([term] * 2)
-        
+
         # 增加歌手名称的权重
         artist_terms = ["周杰伦", "Jay Chou"]
         for term in artist_terms:
             if term in query:
                 weighted_query.extend([term] * 2)
-        
+
         # BM25
         bm25 = BM25Okapi(tokenized_corpus)
         scores = bm25.get_scores(weighted_query)
@@ -365,7 +392,7 @@ class HybridRetriever:
                 if any(award in content_lower for award in ["金曲奖", "台湾金曲奖"]):
                     bonus += 0.2
             normalized_score = min(1.0, normalized_score + bonus)
-            
+
             results.append(RetrievalResult(
                 chunk_id=doc_id,
                 content=content,
@@ -385,12 +412,13 @@ class HybridRetriever:
         top_k: int,
         vector_weight: float,
         keyword_weight: float,
+        doc_ids: Optional[List[str]] = None,
     ) -> List[RetrievalResult]:
         """混合检索 + RRF 融合"""
         # 两路召回
-        vector_results = await self._vector_search(query, kb_id, top_k * 2)  # 扩大召回
+        vector_results = await self._vector_search(query, kb_id, top_k * 2, doc_ids)
         logger.info("vector_results 向量检索完成")
-        keyword_results = self._keyword_search(query, kb_id, top_k * 2)
+        keyword_results = self._keyword_search(query, kb_id, top_k * 2, doc_ids)
         logger.info("keywords 检索完成")
         logger.info("两路召回向量检索完成")
         # RRF 融合

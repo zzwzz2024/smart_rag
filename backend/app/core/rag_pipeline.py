@@ -88,246 +88,240 @@ class RAGPipeline:
             # 失败时回退到原始查询
             return query, []
 
+
     async def run(
-        self,
-        query: str,
-        kb_ids: List[str],
-        conversation_history: List[dict] = None,
-        model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url:Optional[str] = None,
-        model_id: Optional[str] = None,
-        temperature: Optional[float] = None,
-        top_k: Optional[float] = None,
-        top_p: Optional[float] = None,
-        retrieval_mode: str = "hybrid",
-        use_llm: bool = True,
-        db = None,
-        domain: str = None,  # 新增领域参数
-        user = None,  # 新增用户参数，用于权限检查
-    ) -> GenerationResult:
-        """
-        执行完整 RAG 流程
+                self,
+                query: str,
+                kb_ids: List[str],
+                conversation_history: List[dict] = None,
+                model: Optional[str] = None,
+                model_id: Optional[str] = None,
+                api_key: Optional[str] = None,
+                base_url: Optional[str] = None,
+                temperature: Optional[float] = None,
+                top_p: Optional[float] = 0.95,
+                top_k: Optional[int] = None,
+                retrieval_mode: str = "hybrid",
+                domain: str = None,
+                use_llm: bool = True,
+                db=None,
+                user=None,
+        ):
+            """RAG 流程"""
+            logger.info(f"[RAG] Starting - query='{query[:50]}...', kb_ids={kb_ids}")
 
-        Stage 1: 查询改写扩写 (Query Rewriting)
-        Stage 2: 检索 (Retrieval)
-        Stage 3: 重排序 (Reranking)
-        Stage 4: 过滤 (Filtering)
-        Stage 5: 生成 (Generation)
-        """
-        top_k = top_k or settings.RERANK_TOP_K
+            # ── Stage 1: 查询改写 ──
+            processed_query = query
+            if settings.ENABLE_QUERY_REWRITE:
+                logger.info(f"[RAG] Stage 1: Query Rewriting")
+                processed_query, expanded_queries = await self._rewrite_query_with_llm(
+                    query=query,
+                    domain=domain,
+                    model=model,
+                    api_key=api_key,
+                    model_id=model_id
+                )
+            else:
+                expanded_queries = []
 
-        # ── Stage 1: 查询改写扩写 ──
-        processed_query = query
-        if settings.ENABLE_QUERY_REWRITE:
-            logger.info(f"[RAG] Stage 1: Query Rewriting - original query='{query[:50]}'")
-            # 使用大模型进行查询改写和扩写
-            processed_query, expanded_queries = await self._rewrite_query_with_llm(
-                query=query,
-                domain=domain,
-                model=model,
-                api_key=api_key,
-                base_url=base_url,
-                model_id=model_id
-            )
-            logger.info(f"[RAG] Processed query: {processed_query}")
-            if expanded_queries:
-                logger.info(f"[RAG] Expanded queries: {expanded_queries[:3]}")
-        else:
-            logger.info(f"[RAG] Query rewriting disabled")
+            # ── 新增：权限前置检查 ──
+            authorized_doc_ids = None
+            authorized_kb_ids = None
+            if db and user:
+                logger.info("[RAG] Pre-filtering authorized documents")
+                from backend.app.models.document import Document, DocumentRole
+                from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseRole
 
-        # ── Stage 2: 混合检索 ──
-        logger.info(f"[RAG] Stage 2: Retrieval - query='{processed_query[:50]}', domain={domain}")
-        retrieved = await self.retriever.retrieve(
-            query=processed_query,
-            kb_ids=kb_ids,
-            top_k=settings.RETRIEVAL_TOP_K,
-            mode=retrieval_mode,
-            domain=domain,  # 传递领域参数
-        )
-        logger.info(f"[RAG] Retrieved {len(retrieved)} chunks")
+                authorized_doc_ids = set()
+                authorized_kb_ids = set()
 
-        # ── 权限检查 ──
-        if db and user:
-            logger.info("[RAG] Checking document permissions")
-            from backend.app.models.document import Document, DocumentChunk
-            from backend.app.models.knowledge_base import KnowledgeBase
-            from sqlalchemy import select, exists
-            
-            # 过滤出用户有权限的chunks
-            authorized_chunks = []
-            
-            for chunk in retrieved:
-                try:
-                    # 获取chunk对应的文档ID
-                    chunk_result = await db.execute(
-                        select(DocumentChunk.doc_id).where(
-                            (DocumentChunk.id == chunk.chunk_id) &
-                            (DocumentChunk.is_deleted == False)
-                        )
+                # 1. 获取所有相关知识库
+                kb_result = await db.execute(
+                    select(KnowledgeBase).where(
+                        (KnowledgeBase.id.in_(kb_ids)) &
+                        (KnowledgeBase.is_deleted == False)
                     )
-                    doc_id = chunk_result.scalar_one_or_none()
+                )
+                knowledge_bases = kb_result.scalars().all()
 
-                    if doc_id:
-                        # 获取文档信息
-                        doc_result = await db.execute(
-                            select(Document).where(Document.id == doc_id, Document.is_deleted == False)
-                        )
-                        doc = doc_result.scalar_one_or_none()
-
-                        if doc:
-                            # 获取知识库信息
-                            kb_result = await db.execute(
-                                select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+                for kb in knowledge_bases:
+                    # 2. 知识库所有者
+                    # if kb.owner_id == user.id:
+                    #     # 获取该知识库下所有文档
+                    #     doc_result = await db.execute(
+                    #         select(Document.id).where(
+                    #             (Document.kb_id == kb.id) &
+                    #             (Document.is_deleted == False)
+                    #         )
+                    #     )
+                    #     for doc_id in doc_result.scalars().all():
+                    #         authorized_doc_ids.add(doc_id)
+                    # elif user.role_id:
+                    #     # 3. 通过角色授权的知识库
+                    #     kb_role_result = await db.execute(
+                    #         select(KnowledgeBaseRole).where(
+                    #             (KnowledgeBaseRole.kb_id == kb.id) &
+                    #             (KnowledgeBaseRole.role_id == user.role_id) &
+                    #             (KnowledgeBaseRole.is_deleted == False)
+                    #         )
+                    #     )
+                    #     if kb_role_result.scalar_one_or_none():
+                    #         # 有知识库权限，获取所有文档
+                    #         doc_result = await db.execute(
+                    #             select(Document.id).where(
+                    #                 (Document.kb_id == kb.id) &
+                    #                 (Document.is_deleted == False)
+                    #             )
+                    #         )
+                    #         for doc_id in doc_result.scalars().all():
+                    #             authorized_doc_ids.add(doc_id)
+                    #     else:
+                            # 4. 单独的文档权限
+                            has_kb_permission = False
+                            kb_role_result = await db.execute(
+                                select(KnowledgeBaseRole).where(
+                                    (KnowledgeBaseRole.kb_id == kb.id) &
+                                    (KnowledgeBaseRole.role_id == user.role_id) &
+                                    (KnowledgeBaseRole.is_deleted == False)
+                                )
                             )
-                            kb = kb_result.scalar_one_or_none()
+                            if kb_role_result.scalar_one_or_none():
+                                has_kb_permission = True
+                                authorized_kb_ids.add(kb.id)
 
-                            if kb:
+                            if not has_kb_permission:
+                                continue
 
-                                # 检查权限
-                                # if kb.owner_id == user.id:
-                                #     # 用户是知识库所有者，有权限
-                                #     authorized_chunks.append(chunk)
-                                # else:
-                                    # 检查用户角色是否有权限
-                                    if user.role_id:
-                                        from backend.app.models.document import DocumentRole
-                                        from backend.app.models.knowledge_base import KnowledgeBaseRole
+                            doc_role_result = await db.execute(
+                                select(DocumentRole.doc_id).where(
+                                    (DocumentRole.role_id == user.role_id) &
+                                    (DocumentRole.is_deleted == False)
+                                )
+                            )
+                            for doc_id in doc_role_result.scalars().all():
+                                # 验证文档是否在目标知识库中
+                                doc_check = await db.execute(
+                                    select(Document.kb_id).where(
+                                        (Document.id == doc_id) &
+                                        (Document.is_deleted == False)
+                                    )
+                                )
+                                doc_kb_id = doc_check.scalar_one_or_none()
+                                if doc_kb_id == kb.id and has_kb_permission:
+                                    authorized_doc_ids.add(doc_id)
 
-                                        has_kb_permission = False
-                                        has_doc_permission = False
+                logger.info(f"[RAG] Authorized {len(authorized_doc_ids)} documents")
+                authorized_doc_ids = list(authorized_doc_ids) if authorized_doc_ids else None
 
-                                        # 1. 检查知识库级别的权限
-                                        kb_role_result = await db.execute(
-                                            select(KnowledgeBaseRole).where(
-                                                (KnowledgeBaseRole.kb_id == kb.id) &
-                                                (KnowledgeBaseRole.role_id == user.role_id) &
-                                                (KnowledgeBaseRole.is_deleted == False)
-                                            )
-                                        )
-
-                                        if kb_role_result.scalar_one_or_none():
-                                            has_kb_permission = True
-
-                                        # 2. 检查文档级别的权限
-                                        if not has_doc_permission:
-                                            doc_role_result = await db.execute(
-                                                select(DocumentRole).where(
-                                                    (DocumentRole.doc_id == doc_id) &
-                                                    (DocumentRole.role_id == user.role_id) &
-                                                    (DocumentRole.is_deleted == False)
-                                                )
-                                            )
-                                            if doc_role_result.scalar_one_or_none():
-                                                has_doc_permission = True
-
-                                        # 3. 既有知识库也有文档权限，则允许访问
-                                        if has_kb_permission and has_doc_permission:
-                                            authorized_chunks.append(chunk)
-                except Exception as e:
-                    logger.error(f"Permission check failed for chunk {chunk.chunk_id}: {e}")
-            
-            retrieved = authorized_chunks
-            logger.info(f"[RAG] After permission check: {len(retrieved)} chunks")
-
-        if not retrieved:
-            logger.warning("[RAG] No chunks retrieved")
-            return await self.generator.generate(
-                query=query,
-                retrieved_chunks=[],
-                conversation_history=conversation_history,
-                model=model,
-                model_id=model_id,
-                temperature=temperature,
-                top_p=top_p,
-                api_key=api_key,
-                base_url=base_url
-            )
-
-        # ── Stage 3: 重排序 ──
-        filtered = retrieved
-        if settings.ENABLE_RERANK:
-            logger.info(f"[RAG] Stage 3: Reranking top {top_k}")
-            reranked = await self.reranker.rerank(
+            # ── Stage 2: 检索 ──
+            logger.info(f"[RAG] Stage 2: Retrieval - query='{processed_query[:50]}', domain={domain}")
+            retrieved = await self.retriever.retrieve(
                 query=processed_query,
-                results=retrieved,
-                top_k=top_k,
+                kb_ids=list(authorized_kb_ids),
+                top_k=settings.RETRIEVAL_TOP_K,
+                mode=retrieval_mode,
+                domain=domain,
+                doc_ids=authorized_doc_ids,
             )
+            logger.info(f"[RAG] Retrieved {len(retrieved)} chunks")
 
-            # ── Stage 4: 相关性过滤 ──
-            # 降低阈值以提高召回率
-            threshold = settings.SIMILARITY_THRESHOLD * 0.8
-            filtered = [
-                r for r in reranked
-                if r.score >= threshold
-            ]
-            if not filtered:
-                logger.warning("[RAG] All results below threshold, using top result")
-                filtered = reranked[:3]  # 使用前3个结果
-        else:
-            logger.info("[RAG] Reranking disabled, using top results directly")
-            # 直接使用检索结果的前top_k个
-            filtered = retrieved[:top_k]
+            if not retrieved:
+                logger.warning("[RAG] No chunks retrieved")
+                return await self.generator.generate(
+                    query=query,
+                    retrieved_chunks=[],
+                    conversation_history=conversation_history,
+                    model=model,
+                    model_id=model_id,
+                    temperature=temperature,
+                    top_p=top_p,
+                    api_key=api_key,
+                    base_url=base_url
+                )
 
-        logger.info(f"[RAG] After filtering: {len(filtered)} chunks")
-        if use_llm:
-            # ── Stage 4: 生成 ──
-            logger.info("[RAG] Stage 4: Generation")
-            result = await self.generator.generate(
-                query=query,
-                retrieved_chunks=filtered,
-                conversation_history=conversation_history,
-                model=model,
-                model_id=model_id,
-                api_key=api_key,
-                base_url=base_url,
-                temperature=temperature,
-                top_p=top_p,
-            )
+            # ── Stage 3: 重排序 ──
+            filtered = retrieved
+            if settings.ENABLE_RERANK:
+                logger.info(f"[RAG] Stage 3: Reranking top {top_k}")
+                reranked = await self.reranker.rerank(
+                    query=processed_query,
+                    results=retrieved,
+                    top_k=top_k,
+                )
 
-            logger.info(
-                f"[RAG] Done - confidence={result.confidence}, "
-                f"citations={len(result.citations)}, "
-                f"time={result.response_time:.2f}s"
-            )
+                # ── Stage 4: 相关性过滤 ──
+                # 降低阈值以提高召回率
+                threshold = settings.SIMILARITY_THRESHOLD * 0.8
+                filtered = [
+                    r for r in reranked
+                    if r.score >= threshold
+                ]
+                if not filtered:
+                    logger.warning("[RAG] All results below threshold, using top result")
+                    filtered = reranked[:3]
+            else:
+                logger.info("[RAG] Reranking disabled, using top results directly")
+                filtered = retrieved[:top_k]
 
-            return result
-        else:
-            results = []
-            for result in filtered:
-                content = result.content.replace("\n", "")
-                filename = "unknown"
-                if db and result.chunk_id:
-                    try:
-                        # 从chunk表获取doc_id
-                        chunk_result = await db.execute(
-                            select(DocumentChunk.doc_id).where(DocumentChunk.id == result.chunk_id)
-                        )
-                        doc_id = chunk_result.scalar_one_or_none()
-                        if doc_id:
-                            # 从document表获取filename
-                            doc_result = await db.execute(
-                                select(Document.filename).where(Document.id == doc_id)
+            logger.info(f"[RAG] After filtering: {len(filtered)} chunks")
+            if use_llm:
+                # ── Stage 4: 生成 ──
+                logger.info("[RAG] Stage 4: Generation")
+                result = await self.generator.generate(
+                    query=query,
+                    retrieved_chunks=filtered,
+                    conversation_history=conversation_history,
+                    model=model,
+                    model_id=model_id,
+                    api_key=api_key,
+                    base_url=base_url,
+                    temperature=temperature,
+                    top_p=top_p,
+                )
+
+                logger.info(
+                    f"[RAG] Done - confidence={result.confidence}, "
+                    f"citations={len(result.citations)}, "
+                    f"time={result.response_time:.2f}s"
+                )
+
+                return result
+            else:
+                results = []
+                for result in filtered:
+                    content = result.content.replace("\n", "")
+                    filename = "unknown"
+                    if db and result.chunk_id:
+                        try:
+                            from backend.app.models.document import DocumentChunk, Document
+                            # 从 chunk 获取 doc_id
+                            chunk_result = await db.execute(
+                                select(DocumentChunk.doc_id).where(DocumentChunk.id == result.chunk_id)
                             )
-                            filename = doc_result.scalar_one_or_none() or "unknown"
-                    except Exception as e:
-                        logger.error(f"获取文件名失败: {str(e)}")
-                else:
-                    # 如果没有数据库连接，回退到从metadata获取
-                    filename = result.metadata.get("filename", "unknown")
-                result_dict = {
-                    "filename": filename,
-                    "content": content,
-                    "score": result.score,
-                }
-                results.append(json.dumps(result_dict, ensure_ascii=False, indent=None))
-            return GenerationResult(
-                answer="\n".join(results),
-                confidence=0.0,
-                citations=[],  # 保持原字段
-                response_time=0.0,
-                token_usage={}
-            )
+                            doc_id = chunk_result.scalar_one_or_none()
+                            if doc_id:
+                                # 从 document 表获取 filename
+                                doc_result = await db.execute(
+                                    select(Document.filename).where(Document.id == doc_id)
+                                )
+                                filename = doc_result.scalar_one_or_none() or "unknown"
+                        except Exception as e:
+                            logger.error(f"获取文件名失败：{str(e)}")
+                    else:
+                        filename = result.metadata.get("filename", "unknown")
+                    result_dict = {
+                        "filename": filename,
+                        "content": content,
+                        "score": result.score,
+                    }
+                    results.append(json.dumps(result_dict, ensure_ascii=False, indent=None))
+                return GenerationResult(
+                    answer="\n".join(results),
+                    confidence=0.0,
+                    citations=[],
+                    response_time=0.0,
+                    token_usage={}
+                )
 
 
     async def run_stream(
