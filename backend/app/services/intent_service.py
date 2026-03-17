@@ -5,9 +5,12 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from backend.app.models import User
 from backend.app.models.knowledge_base import KnowledgeBase
 from loguru import logger
-
+from backend.app.models.knowledge_base import KnowledgeBaseRole
+from backend.app.models.system import Role
 
 class IntentService:
     """
@@ -45,24 +48,54 @@ class IntentService:
         matched_kbs = await self._match_kbs_with_llm(query, kbs)
         
         return [kb.id for kb in matched_kbs]
-    
+
     async def _get_user_knowledge_bases(self) -> List[KnowledgeBase]:
         """
         获取用户的所有知识库
-        
+
         Returns:
             List[KnowledgeBase]: 知识库列表
         """
-        result = await self.db.execute(
+        # 1. 先获取用户的角色 ID
+        user_result = await self.db.execute(
+            select(User)
+            .where(User.id == self.user_id)
+        )
+        user = user_result.scalar_one_or_none()
+
+        # 2. 查询用户拥有的知识库
+        owned_kbs_result = await self.db.execute(
             select(KnowledgeBase)
             .options(
                 selectinload(KnowledgeBase.tags),
                 selectinload(KnowledgeBase.domains)
             )
-            .where(KnowledgeBase.owner_id == self.user_id)
+            .where((KnowledgeBase.owner_id == self.user_id)
+                   & (KnowledgeBase.is_deleted == False))
         )
-        return result.scalars().all()
-    
+        owned_kbs = owned_kbs_result.scalars().all()
+
+        # 3. 查询用户通过角色授权的知识库
+        authorized_kbs_result = await self.db.execute(
+            select(KnowledgeBase)
+            .options(
+                selectinload(KnowledgeBase.tags),
+                selectinload(KnowledgeBase.domains)
+            )
+            .join(KnowledgeBaseRole, KnowledgeBase.id == KnowledgeBaseRole.kb_id)
+            .join(Role, Role.id == KnowledgeBaseRole.role_id)
+            .where(KnowledgeBaseRole.is_deleted == False,
+                       (Role.id == user.role_id),
+                        KnowledgeBase.is_deleted == False
+                   )
+        )
+        authorized_kbs = authorized_kbs_result.scalars().all()
+        # 4. 合并并去重（避免重复的知识库）
+        kb_dict = {kb.id: kb for kb in owned_kbs + authorized_kbs}
+        for kb in authorized_kbs:
+             kb_dict[kb.id] = kb
+        return list(kb_dict.values())
+
     def _extract_keywords(self, query: str) -> List[str]:
         """
         提取关键词

@@ -161,42 +161,68 @@ class RAGPipeline:
                 try:
                     # 获取chunk对应的文档ID
                     chunk_result = await db.execute(
-                        select(DocumentChunk.doc_id).where(DocumentChunk.id == chunk.chunk_id)
+                        select(DocumentChunk.doc_id).where(
+                            (DocumentChunk.id == chunk.chunk_id) &
+                            (DocumentChunk.is_deleted == False)
+                        )
                     )
                     doc_id = chunk_result.scalar_one_or_none()
-                    
+
                     if doc_id:
                         # 获取文档信息
                         doc_result = await db.execute(
                             select(Document).where(Document.id == doc_id, Document.is_deleted == False)
                         )
                         doc = doc_result.scalar_one_or_none()
-                        
+
                         if doc:
                             # 获取知识库信息
                             kb_result = await db.execute(
                                 select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
                             )
                             kb = kb_result.scalar_one_or_none()
-                            
+
                             if kb:
+
                                 # 检查权限
-                                if kb.owner_id == user.id:
-                                    # 用户是知识库所有者，有权限
-                                    authorized_chunks.append(chunk)
-                                else:
+                                # if kb.owner_id == user.id:
+                                #     # 用户是知识库所有者，有权限
+                                #     authorized_chunks.append(chunk)
+                                # else:
                                     # 检查用户角色是否有权限
                                     if user.role_id:
                                         from backend.app.models.document import DocumentRole
-                                        role_result = await db.execute(
-                                            select(DocumentRole).where(
-                                                DocumentRole.doc_id == doc_id,
-                                                DocumentRole.role_id == user.role_id,
-                                                DocumentRole.is_deleted == False
+                                        from backend.app.models.knowledge_base import KnowledgeBaseRole
+
+                                        has_kb_permission = False
+                                        has_doc_permission = False
+
+                                        # 1. 检查知识库级别的权限
+                                        kb_role_result = await db.execute(
+                                            select(KnowledgeBaseRole).where(
+                                                (KnowledgeBaseRole.kb_id == kb.id) &
+                                                (KnowledgeBaseRole.role_id == user.role_id) &
+                                                (KnowledgeBaseRole.is_deleted == False)
                                             )
                                         )
-                                        if role_result.scalar_one_or_none():
-                                            # 用户角色有权限
+
+                                        if kb_role_result.scalar_one_or_none():
+                                            has_kb_permission = True
+
+                                        # 2. 检查文档级别的权限
+                                        if not has_doc_permission:
+                                            doc_role_result = await db.execute(
+                                                select(DocumentRole).where(
+                                                    (DocumentRole.doc_id == doc_id) &
+                                                    (DocumentRole.role_id == user.role_id) &
+                                                    (DocumentRole.is_deleted == False)
+                                                )
+                                            )
+                                            if doc_role_result.scalar_one_or_none():
+                                                has_doc_permission = True
+
+                                        # 3. 既有知识库也有文档权限，则允许访问
+                                        if has_kb_permission and has_doc_permission:
                                             authorized_chunks.append(chunk)
                 except Exception as e:
                     logger.error(f"Permission check failed for chunk {chunk.chunk_id}: {e}")
@@ -317,6 +343,7 @@ class RAGPipeline:
         retrieval_mode: str = "hybrid",
         domain: str = None,  # 新增领域参数
         user = None,  # 新增用户参数，用于权限检查
+        db: AsyncSession = None,
     ):
         """流式 RAG"""
         top_k = top_k or settings.RERANK_TOP_K
