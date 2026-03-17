@@ -11,14 +11,15 @@ from backend.app.core.reranker import Reranker
 from backend.app.core.generator import Generator, GenerationResult
 from backend.app.config import get_settings
 from backend.app.models.document import DocumentChunk, Document
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 settings = get_settings()
 
 class RAGPipeline:
     """RAG 全流程编排"""
 
-    def __init__(self, api_key=None, base_url=None, model_name=None, embedding_model=None, rerank_model=None,db: AsyncSession = None, rerank_provider=None):
+    def __init__(self, api_key=None, base_url=None, model_name=None, embedding_model=None, rerank_model=None,
+                 db: AsyncSession = None,pm_db: AsyncSession = None, rerank_provider=None):
         self.retriever = HybridRetriever(embedding_model=embedding_model)
         self.reranker = Reranker(
             rerank_model=rerank_model,
@@ -26,6 +27,160 @@ class RAGPipeline:
             provider=rerank_provider
         )  # 传递所有参数
         self.generator = Generator(api_key, base_url, model_name)
+        self.db = db
+        self.pm_db = pm_db
+
+    async def _detect_query_intent(
+        self,
+        query: str,
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model_id: Optional[str] = None,
+    ) -> str:
+        """
+        检测用户查询意图
+        返回：'knowledge_base' 或 'database'
+        """
+        system_prompt = """你是一个意图检测助手，负责判断用户的查询是需要检索知识库还是查询数据库。
+
+        规则：
+        1. 如果查询涉及项目和采购类信息查询（如项目名称、项目编号、项目负责人、项目状态等）或采购信息（如采购订单、采购物品、采购金额、供应商等），返回 'database'
+        2. 其他所有查询（如技术文档、产品信息、公司政策等）返回 'knowledge_base'
+
+        只需要返回 'database' 或 'knowledge_base'，不需要其他任何内容。
+        """
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"用户查询：{query}"}
+        ]
+
+        try:
+            # 获取或创建模型客户端
+            client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
+            
+            response = await client.chat.completions.create(
+                model=model or "gpt-3.5-turbo",
+                messages=messages,
+                temperature=0.1,
+                max_tokens=10
+            )
+
+            intent = response.choices[0].message.content.strip().lower()
+            logger.info(f"[RAG] Detected intent: {intent}")
+            
+            if intent == 'database':
+                return 'database'
+            else:
+                return 'knowledge_base'
+        except Exception as e:
+            logger.error(f"Intent detection failed: {e}")
+            # 失败时默认返回知识库查询
+            return 'knowledge_base'
+
+    async def _generate_sql_query(
+        self,
+        query: str,
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model_id: Optional[str] = None,
+    ) -> str:
+        """
+        根据用户查询和表结构生成SQL查询语句
+        """
+        system_prompt = """你是一个SQL查询生成器，负责根据用户的自然语言查询和表结构生成PostgreSQL SQL查询语句。
+
+        表结构：
+        1. 项目表 (project_info)
+            project_code IS '项目编码：唯一标识符，主键'
+            project_name IS '项目名称'
+            region IS '所属大区'
+            city IS '所属城市'
+            department IS '所属部门'
+            construction_unit IS '建设单位'
+            contract_amount IS '合同金额'
+            payment_terms IS '付款条款'
+            sales_manager IS '销售经理'
+            product_manager IS '产品经理'
+            tech_manager IS '技术负责人'
+            ops_manager IS '运维负责人'
+            planned_start IS '计划开始日期'
+            actual_start IS '实际开始日期'
+            planned_end IS '计划结束日期'
+            actual_end IS '实际结束日期'
+            delay_status IS '延期状态（如：正常、延期）'
+            construction_cycle IS '建设周期'
+
+        2. 采购表 (project_purchases)
+            id IS '主键ID'
+            project_code IS '关联项目编码：外键，关联 project_info 表'
+            project_name IS '项目名称（冗余字段，便于查询展示）'
+            purchase_item IS '采购物品/服务名称'
+            quantity IS '采购数量'
+            unit_price IS '单价'
+            total_amount IS '总金额'
+            supplier IS '供应商名称'
+            purchase_officer IS '采购负责人'
+            warranty_period IS '质保期'
+            purchase_date IS '采购日期'
+            status IS '项目状态'
+
+        要求：
+        1. 分析用户查询，理解其意图
+        2. 根据表结构生成正确的SQL查询语句
+        3. 确保SQL语句语法正确，避免SQL注入
+        4. 只返回SQL语句，不需要其他任何内容
+        5. 如果查询涉及多个表，使用适当的JOIN操作
+        """
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"用户查询：{query}"}
+        ]
+
+        try:
+            # 获取或创建模型客户端
+            client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
+            
+            response = await client.chat.completions.create(
+                model=model or "gpt-3.5-turbo",
+                messages=messages,
+                temperature=0.1,
+                max_tokens=500
+            )
+
+            sql = response.choices[0].message.content.strip()
+            logger.info(f"[RAG] Generated SQL: {sql}")
+            
+            return sql
+        except Exception as e:
+            logger.error(f"SQL generation failed: {e}")
+            raise
+
+    async def _execute_sql_query(
+        self,
+        sql: str,
+        pm_db: AsyncSession = None,
+    ) -> List[dict]:
+        """
+        执行SQL查询并返回结果
+        """
+        try:
+            logger.info(f"[RAG] Executing SQL: {sql}")
+            result = await pm_db.execute(text(sql))
+            rows = result.all()
+            
+            # 转换结果为字典列表
+            columns = result.keys()
+            results = [dict(zip(columns, row)) for row in rows]
+            
+            logger.info(f"[RAG] SQL executed successfully, {len(results)} rows returned")
+            return results
+        except Exception as e:
+            logger.error(f"SQL execution failed: {e}")
+            raise
 
     async def _rewrite_query_with_llm(
         self,
@@ -105,11 +260,77 @@ class RAGPipeline:
                 domain: str = None,
                 use_llm: bool = True,
                 db=None,
+                pm_db=None,
                 user=None,
         ):
             """RAG 流程"""
             logger.info(f"[RAG] Starting - query='{query[:50]}...', kb_ids={kb_ids}")
 
+            # ── 新增：意图检测 ──
+            intent = await self._detect_query_intent(
+                query=query,
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+                model_id=model_id
+            )
+            
+            # 如果是数据库查询意图
+            if intent == 'database' and pm_db:
+                logger.info(f"[RAG] Database query intent detected")
+                try:
+                    # 生成SQL查询
+                    sql = await self._generate_sql_query(
+                        query=query,
+                        model=model,
+                        api_key=api_key,
+                        base_url=base_url,
+                        model_id=model_id
+                    )
+                    
+                    # 执行SQL查询
+                    results = await self._execute_sql_query(sql,pm_db)
+                    
+                    # 将查询结果传递给大模型进行总结
+                    system_prompt = f"""你是一个专业的数据分析助手，负责根据数据库查询结果回答用户的问题。
+
+                    请基于以下查询结果，用自然、友好的语言回答用户的问题：
+                    
+                    查询结果：
+                    {results}
+                    """
+                    
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": query}
+                    ]
+                    
+                    # 获取或创建模型客户端
+                    client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
+                    
+                    response = await client.chat.completions.create(
+                        model=model or "gpt-3.5-turbo",
+                        messages=messages,
+                        temperature=temperature or 0.7,
+                        max_tokens=1000
+                    )
+                    
+                    answer = response.choices[0].message.content.strip()
+                    logger.info(f"[RAG] Database query completed successfully")
+                    
+                    # 构建返回结果
+                    from backend.app.core.generator import GenerationResult
+                    return GenerationResult(
+                        answer=answer,
+                        confidence=0.9,
+                        citations=[],
+                        response_time=0.0,
+                        token_usage={}
+                    )
+                except Exception as e:
+                    logger.error(f"Database query failed: {e}")
+                    # 失败时回退到知识库查询
+                    pass
             # ── Stage 1: 查询改写 ──
             processed_query = query
             if settings.ENABLE_QUERY_REWRITE:
@@ -341,6 +562,64 @@ class RAGPipeline:
     ):
         """流式 RAG"""
         top_k = top_k or settings.RERANK_TOP_K
+
+        # ── 新增：意图检测 ──
+        intent = await self._detect_query_intent(
+            query=query,
+            model=model,
+            api_key=api_key,
+            base_url=None,
+            model_id=model_id
+        )
+        
+        # 如果是数据库查询意图
+        if intent == 'database' and db:
+            logger.info(f"[RAG Stream] Database query intent detected")
+            try:
+                # 生成SQL查询
+                sql = await self._generate_sql_query(
+                    query=query,
+                    model=model,
+                    api_key=api_key,
+                    base_url=None,
+                    model_id=model_id
+                )
+                
+                # 执行SQL查询
+                results = await self._execute_sql_query(sql)
+                
+                # 将查询结果传递给大模型进行流式总结
+                system_prompt = f"""你是一个专业的数据分析助手，负责根据数据库查询结果回答用户的问题。
+
+                请基于以下查询结果，用自然、友好的语言回答用户的问题：
+                
+                查询结果：
+                {results}
+                """
+                
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query}
+                ]
+                
+                # 获取或创建模型客户端
+                client = self.generator._get_or_create_client(model_id, model, api_key, None)
+                
+                # 流式生成
+                async for chunk in client.chat.completions.create(
+                    model=model or "gpt-3.5-turbo",
+                    messages=messages,
+                    temperature=temperature or 0.7,
+                    max_tokens=1000,
+                    stream=True
+                ):
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+                return
+            except Exception as e:
+                logger.error(f"Database query failed: {e}")
+                # 失败时回退到知识库查询
+                pass
 
         # ── 查询改写扩写 ──
         processed_query = query

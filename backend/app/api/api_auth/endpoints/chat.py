@@ -4,7 +4,7 @@ API聊天接口
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
-from backend.app.database import get_db
+from backend.app.database import get_db, get_pm_db
 from backend.app.services.api_authorization_service import ApiAuthorizationService
 from backend.app.services.api_log_service import ApiLogService
 from backend.app.models.response_model import Response
@@ -22,6 +22,7 @@ async def api_chat(
     request: ApiChatRequest,
     auth_code: str,
     db: AsyncSession = Depends(get_db),
+    pm_db: AsyncSession = Depends(get_pm_db),
     fastapi_request: Request = None,
 ):
     """使用API授权码访问知识库"""
@@ -118,7 +119,9 @@ async def api_chat(
             base_url=model.base_url,
             model_name=model.model,
             embedding_model=embedding_model,
-            rerank_model=rerank_model
+            rerank_model=rerank_model,
+            db = db,
+            pm_db = pm_db
         )
         logger.info(f"pipeline初始化完成")
         # 执行查询
@@ -131,7 +134,8 @@ async def api_chat(
             base_url=model.base_url,
             retrieval_mode=knowledge_base.retrieval_mode,
             use_llm = False,
-            db=db
+            db=db,
+            pm_db=pm_db
         )
         
         return Response(data={

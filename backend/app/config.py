@@ -18,6 +18,7 @@ class Settings(BaseSettings):
 
     # ---- 数据库 ----
     DATABASE_URL: str = "postgresql+asyncpg://postgres:P%40ssw0rd@localhost:5432/rag"
+    PM_DATABASE_URL: str = "postgresql+asyncpg://postgres:P%40ssw0rd@localhost:5432/projects"
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # ---- 文件存储 ----

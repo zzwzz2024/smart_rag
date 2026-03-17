@@ -40,7 +40,9 @@ class Generator:
             self.default_client = None
         print(f"Generator函数初始化完成")
 
-    def _get_or_create_client(self, model_id: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None, base_url: Optional[str] = None) -> AsyncOpenAI:
+    def _get_or_create_client(self, model_id: Optional[str] = None,
+                              model: Optional[str] = None, api_key: Optional[str] = None,
+                              base_url: Optional[str] = None) -> AsyncOpenAI:
         """
         获取或创建对应模型的客户端
         """

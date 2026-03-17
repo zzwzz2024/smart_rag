@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.database import get_db
+from backend.app.database import get_db, get_pm_db
 from backend.app.models.user import User
 from backend.app.models.conversation import Conversation, Message, Feedback
 from backend.app.schemas.chat import (
@@ -26,6 +26,7 @@ from backend.app.models.response_model import Response
 async def chat(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
+    pm_db: AsyncSession = Depends(get_pm_db),
     user: User = Depends(get_current_user),
 ):
     """发送聊天消息"""
@@ -39,7 +40,7 @@ async def chat(
     if matched_kb_ids:
         request.kb_ids = matched_kb_ids
 
-    response = await chat_service.chat(db, request, user.id)
+    response = await chat_service.chat(db, pm_db ,request, user.id)
     return Response(data=response)
 
 

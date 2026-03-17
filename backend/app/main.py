@@ -4,7 +4,7 @@ import uvicorn
 # 导入app模块以初始化loguru配置
 import backend.app
 from backend.app.api.router import api_router  # 引入已定义的路由
-from backend.app.database import init_db  # 引入数据库初始化函数
+from backend.app.database import init_db, init_pm_db  # 引入数据库初始化函数
 # 创建 FastAPI 应用实例
 app = FastAPI()
 
@@ -20,6 +20,7 @@ def read_root():
 @app.on_event("startup")
 async def startup_event():
     await init_db()
+    await init_pm_db()
 
 # 可选：内嵌启动逻辑
 if __name__ == "__main__":

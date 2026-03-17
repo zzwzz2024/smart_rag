@@ -64,6 +64,7 @@ def initialize_rag_pipeline(model_id, kb_id=None, embedding_model_id=None, reran
 
 async def chat(
     db: AsyncSession,
+    pm_db: AsyncSession,
     request: ChatRequest,
     user_id: str,
 ) -> ChatResponse:
@@ -187,6 +188,7 @@ async def chat(
         api_key=api_key,
         base_url=base_url,
         db=db,
+        pm_db=pm_db,
         domain=domain,  # 传递领域参数
         user=user  # 传递用户参数，用于权限检查
     )
