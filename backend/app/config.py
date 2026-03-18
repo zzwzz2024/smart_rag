@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:P%40ssw0rd@localhost:5432/rag"
     PM_DATABASE_URL: str = "postgresql+asyncpg://postgres:P%40ssw0rd@localhost:5432/projects"
     REDIS_URL: str = "redis://localhost:6379/0"
+    
+    # ---- Neo4j 图数据库 ----
+    NEO4J_URL: str = "bolt://localhost:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "P@ssw0rd"
 
     # ---- 文件存储 ----
     # UPLOAD_DIR: str = "E:\\ai_code\\github workplace\\zzwzz_rag\\backend\\uploads"
