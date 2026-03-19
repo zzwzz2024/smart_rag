@@ -3,7 +3,7 @@ SmartRAG 全流程编排器
 Query → Retrieval → Rerank → Generation → Output
 """
 import json
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.retriever import HybridRetriever, RetrievalResult
@@ -274,6 +274,280 @@ class RAGPipeline:
             return query, []
 
 
+    async def _process_relative_time(self, query: str) -> str:
+        """处理查询中的相对时间"""
+        from backend.app.utils.time_tool import replace_relative_time_in_query
+        processed_query = replace_relative_time_in_query(query)
+        logger.info(f"[RAG] Starting - original query='{query[:50]}...', processed query='{processed_query[:50]}...'")
+        return processed_query
+
+    async def _handle_database_intent(self, processed_query: str, model: str, api_key: str, base_url: str, model_id: str, temperature: float, pm_db) -> Optional[GenerationResult]:
+        """处理数据库查询意图"""
+        logger.info(f"[RAG] Database query intent detected")
+        try:
+            # 生成SQL查询
+            sql = await self._generate_sql_query(
+                query=processed_query,
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+                model_id=model_id
+            )
+            
+            # 执行SQL查询
+            results = await self._execute_sql_query(sql, pm_db)
+            
+            # 将查询结果传递给大模型进行总结
+            from backend.app.core.prompts import DATABASE_ANALYSIS_PROMPT
+            system_prompt = DATABASE_ANALYSIS_PROMPT.format(results=results)
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": processed_query}
+            ]
+            
+            # 获取或创建模型客户端
+            client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
+            
+            response = await client.chat.completions.create(
+                model=model or "gpt-3.5-turbo",
+                messages=messages,
+                temperature=temperature or 0.7,
+                max_tokens=1000
+            )
+            
+            answer = response.choices[0].message.content.strip()
+            logger.info(f"[RAG] Database query completed successfully")
+            
+            # 构建返回结果
+            from backend.app.core.generator import GenerationResult
+            return GenerationResult(
+                answer=answer,
+                confidence=0.9,
+                citations=[],
+                response_time=0.0,
+                token_usage={}
+            )
+        except Exception as e:
+            logger.error(f"Database query failed: {e}")
+            # 失败时回退到知识库查询
+            return None
+
+    async def _handle_graph_database_intent(self, processed_query: str, model: str, api_key: str, base_url: str, model_id: str, temperature: float) -> Optional[GenerationResult]:
+        """处理图数据库查询意图"""
+        logger.info(f"[RAG] Graph database query intent detected")
+        try:
+            # 生成Cypher查询
+            cypher = await self._generate_cypher_query(
+                query=processed_query,
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+                model_id=model_id
+            )
+            
+            # 执行Cypher查询
+            results = await self._execute_cypher_query(cypher)
+            
+            # 将查询结果传递给大模型进行总结
+            from backend.app.core.prompts import GRAPH_DATABASE_ANALYSIS_PROMPT
+            system_prompt = GRAPH_DATABASE_ANALYSIS_PROMPT.format(results=results)
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": processed_query}
+            ]
+            
+            # 获取或创建模型客户端
+            client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
+            
+            response = await client.chat.completions.create(
+                model=model or "gpt-3.5-turbo",
+                messages=messages,
+                temperature=temperature or 0.7,
+                max_tokens=1000
+            )
+            
+            answer = response.choices[0].message.content.strip()
+            logger.info(f"[RAG] Graph database query completed successfully")
+            
+            # 构建返回结果
+            from backend.app.core.generator import GenerationResult
+            return GenerationResult(
+                answer=answer,
+                confidence=0.9,
+                citations=[],
+                response_time=0.0,
+                token_usage={}
+            )
+        except Exception as e:
+            logger.error(f"Graph database query failed: {e}")
+            # 失败时回退到知识库查询
+            return None
+
+    async def _check_permissions(self, db, user, kb_ids) -> Tuple[Optional[List[str]], Optional[List[str]]]:
+        """检查权限"""
+        if not db or not user:
+            return None, None
+
+        logger.info("[RAG] Pre-filtering authorized documents")
+        from backend.app.models.document import Document, DocumentRole
+        from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseRole
+
+        authorized_doc_ids = set()
+        authorized_kb_ids = set()
+
+        # 1. 获取所有相关知识库
+        kb_result = await db.execute(
+            select(KnowledgeBase).where(
+                (KnowledgeBase.id.in_(kb_ids)) &
+                (KnowledgeBase.is_deleted == False)
+            )
+        )
+        knowledge_bases = kb_result.scalars().all()
+
+        for kb in knowledge_bases:
+            # 4. 单独的文档权限
+            has_kb_permission = False
+            kb_role_result = await db.execute(
+                select(KnowledgeBaseRole).where(
+                    (KnowledgeBaseRole.kb_id == kb.id) &
+                    (KnowledgeBaseRole.role_id == user.role_id) &
+                    (KnowledgeBaseRole.is_deleted == False)
+                )
+            )
+            if kb_role_result.scalar_one_or_none():
+                has_kb_permission = True
+                authorized_kb_ids.add(kb.id)
+
+            if not has_kb_permission:
+                continue
+
+            doc_role_result = await db.execute(
+                select(DocumentRole.doc_id).where(
+                    (DocumentRole.role_id == user.role_id) &
+                    (DocumentRole.is_deleted == False)
+                )
+            )
+            for doc_id in doc_role_result.scalars().all():
+                # 验证文档是否在目标知识库中
+                doc_check = await db.execute(
+                    select(Document.kb_id).where(
+                        (Document.id == doc_id) &
+                        (Document.is_deleted == False)
+                    )
+                )
+                doc_kb_id = doc_check.scalar_one_or_none()
+                if doc_kb_id == kb.id and has_kb_permission:
+                    authorized_doc_ids.add(doc_id)
+
+        logger.info(f"[RAG] Authorized {len(authorized_doc_ids)} documents")
+        return list(authorized_doc_ids) if authorized_doc_ids else None, list(authorized_kb_ids) if authorized_kb_ids else None
+
+    async def _retrieve_and_rerank(self, processed_query: str, kb_ids: List[str], authorized_doc_ids: List[str], authorized_kb_ids: List[str], top_k: int, retrieval_mode: str, domain: str) -> List[RetrievalResult]:
+        """检索和重排序"""
+        # ── Stage 2: 检索 ──
+        logger.info(f"[RAG] Stage 2: Retrieval - query='{processed_query[:50]}', domain={domain}")
+        retrieved = await self.retriever.retrieve(
+            query=processed_query,
+            kb_ids=authorized_kb_ids or kb_ids,
+            top_k=settings.RETRIEVAL_TOP_K,
+            mode=retrieval_mode,
+            domain=domain,
+            doc_ids=authorized_doc_ids,
+        )
+        logger.info(f"[RAG] Retrieved {len(retrieved)} chunks")
+
+        # ── Stage 3: 重排序 ──
+        filtered = retrieved
+        if settings.ENABLE_RERANK:
+            logger.info(f"[RAG] Stage 3: Reranking top {top_k}")
+            reranked = await self.reranker.rerank(
+                query=processed_query,
+                results=retrieved,
+                top_k=top_k,
+            )
+
+            # ── Stage 4: 相关性过滤 ──
+            # 降低阈值以提高召回率
+            threshold = settings.SIMILARITY_THRESHOLD * 0.8
+            filtered = [
+                r for r in reranked
+                if r.score >= threshold
+            ]
+            if not filtered:
+                logger.warning("[RAG] All results below threshold, using top result")
+                filtered = reranked[:3]
+        else:
+            logger.info("[RAG] Reranking disabled, using top results directly")
+            filtered = retrieved[:top_k]
+
+        logger.info(f"[RAG] After filtering: {len(filtered)} chunks")
+        return filtered
+
+    async def _generate_result(self, processed_query: str, filtered: List[RetrievalResult], conversation_history: List[dict], model: str, model_id: str, api_key: str, base_url: str, temperature: float, top_p: float) -> GenerationResult:
+        """生成结果"""
+        # ── Stage 4: 生成 ──
+        logger.info("[RAG] Stage 4: Generation")
+        result = await self.generator.generate(
+            query=processed_query,
+            retrieved_chunks=filtered,
+            conversation_history=conversation_history,
+            model=model,
+            model_id=model_id,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=temperature,
+            top_p=top_p,
+        )
+
+        logger.info(
+            f"[RAG] Done - confidence={result.confidence}, "
+            f"citations={len(result.citations)}, "
+            f"time={result.response_time:.2f}s"
+        )
+
+        return result
+
+    async def _generate_non_llm_result(self, filtered: List[RetrievalResult], db) -> GenerationResult:
+        """生成非LLM结果"""
+        results = []
+        for result in filtered:
+            content = result.content.replace("\n", "")
+            filename = "unknown"
+            if db and result.chunk_id:
+                try:
+                    from backend.app.models.document import DocumentChunk, Document
+                    # 从 chunk 获取 doc_id
+                    chunk_result = await db.execute(
+                        select(DocumentChunk.doc_id).where(DocumentChunk.id == result.chunk_id)
+                    )
+                    doc_id = chunk_result.scalar_one_or_none()
+                    if doc_id:
+                        # 从 document 表获取 filename
+                        doc_result = await db.execute(
+                            select(Document.filename).where(Document.id == doc_id)
+                        )
+                        filename = doc_result.scalar_one_or_none() or "unknown"
+                except Exception as e:
+                    logger.error(f"获取文件名失败：{str(e)}")
+            else:
+                filename = result.metadata.get("filename", "unknown")
+            result_dict = {
+                "filename": filename,
+                "content": content,
+                "score": result.score,
+            }
+            results.append(json.dumps(result_dict, ensure_ascii=False, indent=None))
+        from backend.app.core.generator import GenerationResult
+        return GenerationResult(
+            answer="\n".join(results),
+            confidence=0.0,
+            citations=[],
+            response_time=0.0,
+            token_usage={}
+        )
+
     async def run(
                 self,
                 query: str,
@@ -295,9 +569,7 @@ class RAGPipeline:
         ):
             """RAG 流程"""
             # 处理查询中的相对时间
-            from backend.app.utils.time_tool import replace_relative_time_in_query
-            processed_query = replace_relative_time_in_query(query)
-            logger.info(f"[RAG] Starting - original query='{query[:50]}...', processed query='{processed_query[:50]}...', kb_ids={kb_ids}")
+            processed_query = await self._process_relative_time(query)
 
             # ── 新增：意图检测 ──
             intent = await self._detect_query_intent(
@@ -310,106 +582,18 @@ class RAGPipeline:
             
             # 如果是数据库查询意图
             if intent == 'database' and pm_db:
-                logger.info(f"[RAG] Database query intent detected")
-                try:
-                    # 生成SQL查询
-                    sql = await self._generate_sql_query(
-                        query=processed_query,
-                        model=model,
-                        api_key=api_key,
-                        base_url=base_url,
-                        model_id=model_id
-                    )
-                    
-                    # 执行SQL查询
-                    results = await self._execute_sql_query(sql,pm_db)
-                    
-                    # 将查询结果传递给大模型进行总结
-                    from backend.app.core.prompts import DATABASE_ANALYSIS_PROMPT
-                    system_prompt = DATABASE_ANALYSIS_PROMPT.format(results=results)
-                    
-                    messages = [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": processed_query}
-                    ]
-                    
-                    # 获取或创建模型客户端
-                    client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
-                    
-                    response = await client.chat.completions.create(
-                        model=model or "gpt-3.5-turbo",
-                        messages=messages,
-                        temperature=temperature or 0.7,
-                        max_tokens=1000
-                    )
-                    
-                    answer = response.choices[0].message.content.strip()
-                    logger.info(f"[RAG] Database query completed successfully")
-                    
-                    # 构建返回结果
-                    from backend.app.core.generator import GenerationResult
-                    return GenerationResult(
-                        answer=answer,
-                        confidence=0.9,
-                        citations=[],
-                        response_time=0.0,
-                        token_usage={}
-                    )
-                except Exception as e:
-                    logger.error(f"Database query failed: {e}")
-                    # 失败时回退到知识库查询
-                    pass
+                result = await self._handle_database_intent(
+                    processed_query, model, api_key, base_url, model_id, temperature, pm_db
+                )
+                if result:
+                    return result
             # 如果是图数据库查询意图
             elif intent == 'graph_database':
-                logger.info(f"[RAG] Graph database query intent detected")
-                try:
-                    # 生成Cypher查询
-                    cypher = await self._generate_cypher_query(
-                        query=processed_query,
-                        model=model,
-                        api_key=api_key,
-                        base_url=base_url,
-                        model_id=model_id
-                    )
-                    
-                    # 执行Cypher查询
-                    results = await self._execute_cypher_query(cypher)
-                    
-                    # 将查询结果传递给大模型进行总结
-                    from backend.app.core.prompts import GRAPH_DATABASE_ANALYSIS_PROMPT
-                    system_prompt = GRAPH_DATABASE_ANALYSIS_PROMPT.format(results=results)
-                    
-                    messages = [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": processed_query}
-                    ]
-                    
-                    # 获取或创建模型客户端
-                    client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
-                    
-                    response = await client.chat.completions.create(
-                        model=model or "gpt-3.5-turbo",
-                        messages=messages,
-                        temperature=temperature or 0.7,
-                        max_tokens=1000
-                    )
-                    
-                    answer = response.choices[0].message.content.strip()
-                    logger.info(f"[RAG] Graph database query completed successfully")
-                    
-                    # 构建返回结果
-                    from backend.app.core.generator import GenerationResult
-                    return GenerationResult(
-                        answer=answer,
-                        confidence=0.9,
-                        citations=[],
-                        response_time=0.0,
-                        token_usage={}
-                    )
-                except Exception as e:
-                    logger.error(f"Graph database query failed: {e}")
-                    # 失败时回退到知识库查询
-                    pass
+                result = await self._handle_graph_database_intent(
+                    processed_query, model, api_key, base_url, model_id, temperature
+                )
+                if result:
+                    return result
 
             # ── Stage 1: 查询改写 ──
             # 保留之前处理过的查询
@@ -426,107 +610,14 @@ class RAGPipeline:
                 expanded_queries = []
 
             # ── 新增：权限前置检查 ──
-            authorized_doc_ids = None
-            authorized_kb_ids = None
-            if db and user:
-                logger.info("[RAG] Pre-filtering authorized documents")
-                from backend.app.models.document import Document, DocumentRole
-                from backend.app.models.knowledge_base import KnowledgeBase, KnowledgeBaseRole
+            authorized_doc_ids, authorized_kb_ids = await self._check_permissions(db, user, kb_ids)
 
-                authorized_doc_ids = set()
-                authorized_kb_ids = set()
-
-                # 1. 获取所有相关知识库
-                kb_result = await db.execute(
-                    select(KnowledgeBase).where(
-                        (KnowledgeBase.id.in_(kb_ids)) &
-                        (KnowledgeBase.is_deleted == False)
-                    )
-                )
-                knowledge_bases = kb_result.scalars().all()
-
-                for kb in knowledge_bases:
-                    # 2. 知识库所有者
-                    # if kb.owner_id == user.id:
-                    #     # 获取该知识库下所有文档
-                    #     doc_result = await db.execute(
-                    #         select(Document.id).where(
-                    #             (Document.kb_id == kb.id) &
-                    #             (Document.is_deleted == False)
-                    #         )
-                    #     )
-                    #     for doc_id in doc_result.scalars().all():
-                    #         authorized_doc_ids.add(doc_id)
-                    # elif user.role_id:
-                    #     # 3. 通过角色授权的知识库
-                    #     kb_role_result = await db.execute(
-                    #         select(KnowledgeBaseRole).where(
-                    #             (KnowledgeBaseRole.kb_id == kb.id) &
-                    #             (KnowledgeBaseRole.role_id == user.role_id) &
-                    #             (KnowledgeBaseRole.is_deleted == False)
-                    #         )
-                    #     )
-                    #     if kb_role_result.scalar_one_or_none():
-                    #         # 有知识库权限，获取所有文档
-                    #         doc_result = await db.execute(
-                    #             select(Document.id).where(
-                    #                 (Document.kb_id == kb.id) &
-                    #                 (Document.is_deleted == False)
-                    #             )
-                    #         )
-                    #         for doc_id in doc_result.scalars().all():
-                    #             authorized_doc_ids.add(doc_id)
-                    #     else:
-                            # 4. 单独的文档权限
-                            has_kb_permission = False
-                            kb_role_result = await db.execute(
-                                select(KnowledgeBaseRole).where(
-                                    (KnowledgeBaseRole.kb_id == kb.id) &
-                                    (KnowledgeBaseRole.role_id == user.role_id) &
-                                    (KnowledgeBaseRole.is_deleted == False)
-                                )
-                            )
-                            if kb_role_result.scalar_one_or_none():
-                                has_kb_permission = True
-                                authorized_kb_ids.add(kb.id)
-
-                            if not has_kb_permission:
-                                continue
-
-                            doc_role_result = await db.execute(
-                                select(DocumentRole.doc_id).where(
-                                    (DocumentRole.role_id == user.role_id) &
-                                    (DocumentRole.is_deleted == False)
-                                )
-                            )
-                            for doc_id in doc_role_result.scalars().all():
-                                # 验证文档是否在目标知识库中
-                                doc_check = await db.execute(
-                                    select(Document.kb_id).where(
-                                        (Document.id == doc_id) &
-                                        (Document.is_deleted == False)
-                                    )
-                                )
-                                doc_kb_id = doc_check.scalar_one_or_none()
-                                if doc_kb_id == kb.id and has_kb_permission:
-                                    authorized_doc_ids.add(doc_id)
-
-                logger.info(f"[RAG] Authorized {len(authorized_doc_ids)} documents")
-                authorized_doc_ids = list(authorized_doc_ids) if authorized_doc_ids else None
-
-            # ── Stage 2: 检索 ──
-            logger.info(f"[RAG] Stage 2: Retrieval - query='{processed_query[:50]}', domain={domain}")
-            retrieved = await self.retriever.retrieve(
-                query=processed_query,
-                kb_ids=list(authorized_kb_ids),
-                top_k=settings.RETRIEVAL_TOP_K,
-                mode=retrieval_mode,
-                domain=domain,
-                doc_ids=authorized_doc_ids,
+            # ── 检索和重排序 ──
+            filtered = await self._retrieve_and_rerank(
+                processed_query, kb_ids, authorized_doc_ids, authorized_kb_ids, top_k, retrieval_mode, domain
             )
-            logger.info(f"[RAG] Retrieved {len(retrieved)} chunks")
 
-            if not retrieved:
+            if not filtered:
                 logger.warning("[RAG] No chunks retrieved")
                 return await self.generator.generate(
                     query=processed_query,
@@ -540,89 +631,13 @@ class RAGPipeline:
                     base_url=base_url
                 )
 
-            # ── Stage 3: 重排序 ──
-            filtered = retrieved
-            if settings.ENABLE_RERANK:
-                logger.info(f"[RAG] Stage 3: Reranking top {top_k}")
-                reranked = await self.reranker.rerank(
-                    query=processed_query,
-                    results=retrieved,
-                    top_k=top_k,
-                )
-
-                # ── Stage 4: 相关性过滤 ──
-                # 降低阈值以提高召回率
-                threshold = settings.SIMILARITY_THRESHOLD * 0.8
-                filtered = [
-                    r for r in reranked
-                    if r.score >= threshold
-                ]
-                if not filtered:
-                    logger.warning("[RAG] All results below threshold, using top result")
-                    filtered = reranked[:3]
-            else:
-                logger.info("[RAG] Reranking disabled, using top results directly")
-                filtered = retrieved[:top_k]
-
-            logger.info(f"[RAG] After filtering: {len(filtered)} chunks")
+            # ── 生成结果 ──
             if use_llm:
-                # ── Stage 4: 生成 ──
-                logger.info("[RAG] Stage 4: Generation")
-                result = await self.generator.generate(
-                    query=processed_query,
-                    retrieved_chunks=filtered,
-                    conversation_history=conversation_history,
-                    model=model,
-                    model_id=model_id,
-                    api_key=api_key,
-                    base_url=base_url,
-                    temperature=temperature,
-                    top_p=top_p,
+                return await self._generate_result(
+                    processed_query, filtered, conversation_history, model, model_id, api_key, base_url, temperature, top_p
                 )
-
-                logger.info(
-                    f"[RAG] Done - confidence={result.confidence}, "
-                    f"citations={len(result.citations)}, "
-                    f"time={result.response_time:.2f}s"
-                )
-
-                return result
             else:
-                results = []
-                for result in filtered:
-                    content = result.content.replace("\n", "")
-                    filename = "unknown"
-                    if db and result.chunk_id:
-                        try:
-                            from backend.app.models.document import DocumentChunk, Document
-                            # 从 chunk 获取 doc_id
-                            chunk_result = await db.execute(
-                                select(DocumentChunk.doc_id).where(DocumentChunk.id == result.chunk_id)
-                            )
-                            doc_id = chunk_result.scalar_one_or_none()
-                            if doc_id:
-                                # 从 document 表获取 filename
-                                doc_result = await db.execute(
-                                    select(Document.filename).where(Document.id == doc_id)
-                                )
-                                filename = doc_result.scalar_one_or_none() or "unknown"
-                        except Exception as e:
-                            logger.error(f"获取文件名失败：{str(e)}")
-                    else:
-                        filename = result.metadata.get("filename", "unknown")
-                    result_dict = {
-                        "filename": filename,
-                        "content": content,
-                        "score": result.score,
-                    }
-                    results.append(json.dumps(result_dict, ensure_ascii=False, indent=None))
-                return GenerationResult(
-                    answer="\n".join(results),
-                    confidence=0.0,
-                    citations=[],
-                    response_time=0.0,
-                    token_usage={}
-                )
+                return await self._generate_non_llm_result(filtered, db)
 
 
     async def run_stream(
@@ -851,3 +866,55 @@ class RAGPipeline:
             temperature=temperature,
         ):
             yield token
+    
+    async def run_with_agent(
+        self,
+        query: str,
+        kb_ids: List[str],
+        agent_name: str = "research_agent",
+        context: Dict[str, Any] = None,
+        model: Optional[str] = None,
+        model_id: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """使用智能体执行RAG流程
+        
+        Args:
+            query: 用户查询
+            kb_ids: 知识库ID列表
+            agent_name: 智能体名称
+            context: 上下文信息
+            model: 模型名称
+            model_id: 模型ID
+            api_key: API密钥
+            base_url: API基础URL
+            
+        Returns:
+            智能体执行结果
+        """
+        from backend.app.core.agents.research_agent import ResearchAgent
+        from backend.app.core.agents.coordinator import AgentCoordinator
+        
+        # 构建上下文
+        context = context or {}
+        context.update({
+            'kb_ids': kb_ids,
+            'model': model,
+            'model_id': model_id,
+            'api_key': api_key,
+            'base_url': base_url
+        })
+        
+        # 初始化智能体
+        agents = {
+            'research_agent': ResearchAgent(self)
+            # 可以添加其他智能体
+        }
+        
+        # 初始化协调器
+        coordinator = AgentCoordinator(agents)
+        
+        # 执行任务
+        result = await coordinator.coordinate(query, context)
+        return result

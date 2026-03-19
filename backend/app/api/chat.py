@@ -204,3 +204,27 @@ async def initialize_model(
         raise HTTPException(404, str(e))
     except Exception as e:
         raise HTTPException(500, f"初始化模型失败：{str(e)}")
+
+
+@router.post("/agent/chat", response_model=Response)
+async def agent_chat(
+    request: ChatRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """智能体聊天"""
+    try:
+        # 实现意图识别和知识库匹配
+        from backend.app.services.intent_service import IntentService
+        intent_service = IntentService(db, user.id)
+        matched_kb_ids = await intent_service.match_knowledge_bases(request.query)
+        
+        # 如果匹配到知识库，使用匹配结果；否则使用请求中的知识库（如果有）
+        if matched_kb_ids:
+            request.kb_ids = matched_kb_ids
+
+        # 调用智能体聊天服务
+        response = await chat_service.agent_chat(db, request, user.id)
+        return Response(data=response)
+    except Exception as e:
+        raise HTTPException(500, f"智能体聊天失败：{str(e)}")

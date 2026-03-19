@@ -345,3 +345,176 @@ async def chat_stream(
         db=db  # 传递数据库会话，用于权限检查
     ):
         yield token
+
+
+async def agent_chat(
+    db: AsyncSession,
+    request: ChatRequest,
+    user_id: str,
+) -> ChatResponse:
+    """处理智能体聊天请求"""
+    # 获取用户信息
+    from backend.app.models.user import User
+    user_result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = user_result.scalar_one_or_none()
+    
+    # 获取或创建对话
+    if request.conversation_id:
+        result = await db.execute(
+            select(Conversation).where(Conversation.id == request.conversation_id)
+        )
+        conversation = result.scalar_one_or_none()
+        if not conversation:
+            # 为新对话生成新的UUID，不使用前端的临时ID
+            conversation = Conversation(
+                user_id=user_id,
+                kb_id=request.kb_ids[0] if request.kb_ids else None,
+                title=request.query[:50],
+            )
+            db.add(conversation)
+            await db.flush()
+    else:
+        conversation = Conversation(
+            user_id=user_id,
+            kb_id=request.kb_ids[0] if request.kb_ids else None,
+            title=request.query[:50],
+        )
+        db.add(conversation)
+        await db.flush()
+
+    # 保存用户消息
+    user_message = Message(
+        conversation_id=conversation.id,
+        role="user",
+        content=request.query,
+    )
+    db.add(user_message)
+
+    # 获取对话历史，使用context_round参数控制历史长度
+    limit = request.context_round * 2 if request.context_round else 10  # 每个轮次包含用户和助手的消息，所以乘以2
+    history = await _get_conversation_history(db, conversation.id, limit)
+
+    # 如果提供了 model_id，从数据库获取模型详情
+    embedding_model = None
+    rerank_model = None
+
+    result = await db.execute(
+        select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
+    )
+    chat_model = result.scalar_one_or_none()
+    api_key = chat_model.api_key
+    base_url = chat_model.base_url
+    model_name = chat_model.name
+    
+    # 如果提供了知识库ID，从数据库获取知识库关联的模型详情
+    if request.kb_ids:
+        try:
+            from backend.app.models.knowledge_base import KnowledgeBase
+            
+            # 获取第一个知识库的详情
+            kb_result = await db.execute(
+                select(KnowledgeBase).where(KnowledgeBase.id == request.kb_ids[0])
+            )
+            kb = kb_result.scalar_one_or_none()
+            
+            if kb:
+                # 获取embedding模型详情
+                if kb.embedding_model_id:
+                    embedding_model_result = await db.execute(
+                        select(Model).where(Model.id == kb.embedding_model_id, Model.is_active == True)
+                    )
+                    embedding_model = embedding_model_result.scalar_one_or_none()
+                
+                # 获取rerank模型详情
+                if kb.rerank_model_id:
+                    rerank_model_result = await db.execute(
+                        select(Model).where(Model.id == kb.rerank_model_id, Model.is_active == True)
+                    )
+                    rerank_model = rerank_model_result.scalar_one_or_none()
+                
+                logger.info(f"Knowledge base {kb.name} associated with embedding model: {embedding_model.name if embedding_model else 'None'}, rerank model: {rerank_model.name if rerank_model else 'None'}")
+        except Exception as e:
+            logger.error(f"Failed to fetch knowledge base models: {e}")
+
+    # 如果本次请求指定了自定义模型（embedding 或 rerank），则创建新 pipeline 实例
+    if embedding_model is not None and rerank_model is not None:
+        pipeline = RAGPipeline(
+            api_key=api_key,
+            base_url=base_url,
+            embedding_model=embedding_model,
+            rerank_model=rerank_model,
+            db = db
+        )
+    else:
+        # 复用全局已初始化的 rag_pipeline（由 api/chat.py 初始化）
+        if rag_pipeline is None:
+            # 如果全局 rag_pipeline 未初始化，创建一个默认的
+            pipeline = RAGPipeline(
+                api_key=api_key,
+                base_url=base_url
+            )
+        else:
+            pipeline = rag_pipeline
+
+    # 获取领域信息
+    domain = await _get_domain_from_kb(db, request.kb_ids)
+
+    # 构建上下文
+    context = {
+        'conversation_history': history,
+        'domain': domain,
+        'user': user
+    }
+
+    # 调用智能体执行
+    agent_result = await pipeline.run_with_agent(
+        query=request.query,
+        kb_ids=request.kb_ids,
+        context=context,
+        model=model_name,
+        temperature=chat_model.temperature if chat_model else 0.7,
+        api_key=api_key,
+        base_url=base_url
+    )
+
+    # 提取智能体执行结果
+    if agent_result.get('result', {}).get('success'):
+        answer = agent_result['result'].get('response', '智能体执行失败')
+        confidence = agent_result['result'].get('confidence', 0.0)
+    else:
+        answer = f"智能体执行失败: {agent_result.get('result', {}).get('error', '未知错误')}"
+        confidence = 0.0
+
+    # 保存 AI 回复
+    ai_message = Message(
+        conversation_id=conversation.id,
+        role="assistant",
+        content=answer,
+        confidence=confidence,
+    )
+    db.add(ai_message)
+    
+    # 创建聊天日志记录
+    chat_log = ChatLog(
+        user_id=user_id,
+        conversation_id=conversation.id,
+        message_id=ai_message.id,
+        query=request.query,
+        answer=answer,
+        model_used=model_name,
+        knowledge_bases=request.kb_ids,
+        agent_used=agent_result.get('agent', 'research_agent'),
+    )
+    db.add(chat_log)
+    
+    await db.commit()
+
+    return ChatResponse(
+        message_id=ai_message.id,
+        conversation_id=conversation.id,
+        answer=answer,
+        citations=[],
+        confidence=confidence,
+    )

@@ -98,6 +98,7 @@ class ChatLog(Base):
     answer: Mapped[str] = mapped_column(Text)
     model_used: Mapped[str] = mapped_column(String(100), nullable=True)
     knowledge_bases: Mapped[list] = mapped_column(JSON, nullable=True)
+    agent_used: Mapped[str] = mapped_column(String(100), nullable=True)
     response_time: Mapped[float] = mapped_column(Float, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
