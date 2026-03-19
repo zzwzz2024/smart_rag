@@ -46,7 +46,7 @@
             </el-button>
             <el-button size="small" @click="manageUsers(scope.row)">
               <el-icon><UserIcon /></el-icon>
-              <span>用户管理</span>
+              <span>分配用户</span>
             </el-button>
             <el-button size="small" type="danger" @click="deleteRole(scope.row.id)">
               <el-icon><Delete /></el-icon>
@@ -59,11 +59,9 @@
     
     <!-- 分页 -->
     <div class="role-pagination">
-      <el-pagination
-        v-model:current-page="pagination.currentPage"
-        v-model:page-size="pagination.pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
+      <Pagination
+        :current-page="pagination.currentPage"
+        :page-size="pagination.pageSize"
         :total="pagination.total"
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -105,6 +103,7 @@
           show-checkbox
           node-key="id"
           default-expand-all
+          @check-change="handleCheckChange"
         />
       </div>
       <template #footer>
@@ -118,7 +117,7 @@
     <!-- 用户管理对话框 -->
     <el-dialog
       v-model="showUserDialog"
-      title="用户管理"
+      :title="`请给${currentRole?.name || ''}角色分配用户`"
       width="800px"
     >
       <div class="user-management">
@@ -131,10 +130,10 @@
             <template #default="scope">
               <el-button 
                 size="small" 
-                :type="scope.row.role_id === currentRole?.id ? 'danger' : 'primary'"
+                :type="String(scope.row.role_id) === String(currentRole?.id) ? 'danger' : 'primary'"
                 @click="toggleUserRole(scope.row)"
               >
-                {{ scope.row.role_id === currentRole?.id ? '移除' : '分配' }}
+                {{ String(scope.row.role_id) === String(currentRole?.id) ? '取消' : '分配' }}
               </el-button>
             </template>
           </el-table-column>
@@ -156,6 +155,7 @@ import { Plus, Search, Refresh, Edit, Delete, Lock, User as UserIcon } from '@el
 import { roleApi, permissionApi, userApi } from '../../api/system'
 import type { Role, Permission, User } from '../../types/system'
 import {useRoute} from "vue-router";
+import Pagination from '../../components/Pagination.vue'
 
 // 数据
 const roles = ref<Role[]>([])
@@ -187,7 +187,7 @@ const roleFormRef = ref()
 
 // 权限设置
 const showPermissionDialog = ref(false)
-const selectedPermissions = ref<string[]>([])
+const selectedPermissions = ref<(string | number)[]>([])
 const currentRole = ref<Role | null>(null)
 
 // 用户管理
@@ -241,10 +241,16 @@ const buildPermissionTree = () => {
   // 这里需要根据实际的权限数据结构构建树
   // 暂时使用简化的实现
   permissionTree.value = permissions.value.map(permission => ({
-    id: permission.id,
+    id: String(permission.id),
     label: permission.name,
     children: []
   }))
+}
+
+// 处理权限选择变化
+const handleCheckChange = (data: any, checked: boolean, indeterminate: boolean) => {
+  console.log('权限选择变化:', { data, checked, indeterminate })
+  console.log('当前选中的权限:', selectedPermissions.value)
 }
 
 // 搜索角色
@@ -288,6 +294,8 @@ const setPermissions = async (role: Role) => {
   showPermissionDialog.value = true
   // 这里可以加载角色现有的权限
   selectedPermissions.value = []
+  console.log('打开权限设置对话框，角色ID:', role.id)
+  console.log('权限树数据:', permissionTree.value)
 }
 
 // 加载用户列表
@@ -313,10 +321,10 @@ const toggleUserRole = async (user: User) => {
   if (!currentRole.value) return
   
   try {
-    if (user.role_id === currentRole.value.id) {
-      // 移除角色
+    if (String(user.role_id) === String(currentRole.value.id)) {
+      // 取消角色
       await userApi.updateUserRole(user.id, '')
-      ElMessage.success('角色移除成功')
+      ElMessage.success('角色取消成功')
     } else {
       // 分配角色
       await userApi.updateUserRole(user.id, currentRole.value.id)
@@ -391,7 +399,10 @@ const savePermissions = async () => {
   if (!currentRole.value) return
   
   try {
-    await roleApi.assignPermissions(currentRole.value.id, selectedPermissions.value)
+    // 将权限ID转换为字符串类型
+    console.log(id)
+    const permissionIds = selectedPermissions.value.map(id => String(id))
+    await roleApi.assignPermissions(currentRole.value.id, permissionIds)
     ElMessage.success('权限保存成功')
     showPermissionDialog.value = false
   } catch (error) {

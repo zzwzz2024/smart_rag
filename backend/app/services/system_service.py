@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 
 from backend.app.models import Role, Menu, Permission, RolePermission, Dictionary, DictionaryItem
+from sqlalchemy import Table
 from backend.app.schemas.system import (
     RoleCreate, RoleUpdate, MenuCreate, MenuUpdate, PermissionCreate, PermissionUpdate,
     RolePermissionCreate, DictionaryCreate, DictionaryUpdate, DictionaryItemCreate, DictionaryItemUpdate
@@ -83,17 +84,18 @@ class SystemService:
         
         # 对权限ID列表进行去重处理
         unique_permission_ids = list(set(role_permission_data.permission_ids))
-        
+
         # 添加新的权限关联
         for permission_id in unique_permission_ids:
             role_permission = RolePermission(
                 role_id=role_permission_data.role_id,
-                permission_id=permission_id
+                permission_id=permission_id,
+                created_at=datetime.utcnow()
             )
             db.add(role_permission)
         
         await db.commit()
-        
+
         # 返回更新后的角色
         return await SystemService.get_role_by_id(db, role_permission_data.role_id)
 
@@ -402,6 +404,49 @@ class SystemService:
         if not user:
             return []
         
+        # 对于管理员用户，直接返回所有菜单
+        if user.role == "admin":
+            # 获取所有菜单
+            all_menus_result = await db.execute(
+                select(Menu).order_by(Menu.sort)
+            )
+            all_menus = all_menus_result.scalars().all()
+            
+            # 构建完整的菜单字典
+            all_menu_dict = {}
+            for menu in all_menus:
+                all_menu_dict[menu.id] = {
+                    "id": menu.id,
+                    "name": menu.name,
+                    "code": menu.code,
+                    "path": menu.path,
+                    "icon": menu.icon,
+                    "parent_id": menu.parent_id,
+                    "sort": menu.sort,
+                    "is_active": menu.is_active,
+                    "created_at": menu.created_at,
+                    "updated_at": menu.updated_at,
+                    "children": []
+                }
+            
+            # 构建菜单树
+            root_menus = []
+            for menu_id, menu_data in all_menu_dict.items():
+                if menu_data["parent_id"] is None:
+                    root_menus.append(menu_data)
+                elif menu_data["parent_id"] in all_menu_dict:
+                    parent = all_menu_dict[menu_data["parent_id"]]
+                    parent["children"].append(menu_data)
+            
+            # 过滤掉与静态菜单重复的菜单项
+            static_menu_names = ["聊天", "知识库", "模型管理"]
+            filtered_root_menus = []
+            for menu in root_menus:
+                if menu["name"] not in static_menu_names:
+                    filtered_root_menus.append(menu)
+            
+            return filtered_root_menus
+        
         # 获取用户角色
         if not user.role_id:
             return []
@@ -444,28 +489,46 @@ class SystemService:
         )
         all_menus = all_menus_result.scalars().all()
         
-        # 构建菜单字典
+        # 构建完整的菜单字典，包含所有菜单
+        all_menu_dict = {}
+        for menu in all_menus:
+            all_menu_dict[menu.id] = {
+                "id": menu.id,
+                "name": menu.name,
+                "code": menu.code,
+                "path": menu.path,
+                "icon": menu.icon,
+                "parent_id": menu.parent_id,
+                "sort": menu.sort,
+                "is_active": menu.is_active,
+                "created_at": menu.created_at,
+                "updated_at": menu.updated_at,
+                "children": []
+            }
+        
+        # 构建菜单字典，只包含用户有权限的菜单及其所有父菜单
         menu_dict = {}
         # 静态菜单名称列表，用于过滤重复菜单
         static_menu_names = ["聊天", "知识库", "模型管理"]
         
-        for menu in all_menus:
-            # 只包含用户有权限的菜单及其父菜单，并且过滤掉与静态菜单重复的菜单项
-            if menu.id in menu_ids and menu.name not in static_menu_names:
-                menu_data = {
-                    "id": menu.id,
-                    "name": menu.name,
-                    "code": menu.code,
-                    "path": menu.path,
-                    "icon": menu.icon,
-                    "parent_id": menu.parent_id,
-                    "sort": menu.sort,
-                    "is_active": menu.is_active,
-                    "created_at": menu.created_at,
-                    "updated_at": menu.updated_at,
-                    "children": []
-                }
-                menu_dict[menu.id] = menu_data
+        # 递归获取所有父菜单
+        def add_menu_and_parents(menu_id):
+            if menu_id in menu_dict:
+                return
+            menu = all_menu_dict.get(menu_id)
+            if not menu:
+                return
+            # 过滤掉与静态菜单重复的菜单项
+            if menu["name"] not in static_menu_names:
+                menu_dict[menu_id] = menu.copy()
+                menu_dict[menu_id]["children"] = []
+                # 递归添加父菜单
+                if menu["parent_id"]:
+                    add_menu_and_parents(menu["parent_id"])
+        
+        # 添加所有有权限的菜单及其父菜单
+        for menu_id in menu_ids:
+            add_menu_and_parents(menu_id)
         
         # 构建菜单树
         root_menus = []

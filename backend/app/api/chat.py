@@ -7,10 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from backend.app.core.rag_pipeline import RAGPipeline
-from backend.app.models.model import Model
-from backend.app.database import get_db
+from backend.app.database import get_db, get_pm_db
 from backend.app.models.user import User
 from backend.app.models.conversation import Conversation, Message, Feedback
 from backend.app.schemas.chat import (
@@ -29,16 +26,21 @@ from backend.app.models.response_model import Response
 async def chat(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
+    pm_db: AsyncSession = Depends(get_pm_db),
     user: User = Depends(get_current_user),
 ):
     """发送聊天消息"""
-    if not request.kb_ids:
-        raise HTTPException(400, "请选择至少一个知识库")
-    
-    if not request.model_id:
-        raise HTTPException(400, "请选择一个模型，如果没有可用模型，请前往模型设置页面配置")
 
-    response = await chat_service.chat(db, request, user.id)
+    # 实现意图识别和知识库匹配
+    from backend.app.services.intent_service import IntentService
+    intent_service = IntentService(db, user.id)
+    matched_kb_ids = await intent_service.match_knowledge_bases(request.query)
+    
+    # 如果匹配到知识库，使用匹配结果；否则使用请求中的知识库（如果有）
+    if matched_kb_ids:
+        request.kb_ids = matched_kb_ids
+
+    response = await chat_service.chat(db, pm_db ,request, user.id)
     return Response(data=response)
 
 
@@ -49,28 +51,20 @@ async def chat_stream(
     user: User = Depends(get_current_user),
 ):
     """流式聊天"""
-    if not request.kb_ids:
-        raise HTTPException(400, "请选择至少一个知识库")
-    
-    if not request.model_id:
-        raise HTTPException(400, "请选择一个模型，如果没有可用模型，请前往模型设置页面配置")
+    try:
+        async def event_generator():
+            async for token in chat_service.chat_stream(db, request, user.id):
+                yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
 
-    from backend.app.core.rag_pipeline import RAGPipeline
-    pipeline = RAGPipeline()
-
-    async def event_generator():
-        async for token in pipeline.run_stream(
-            query=request.query,
-            kb_ids=request.kb_ids,
-            model_id=request.model_id,
-        ):
-            yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-    )
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"流式聊天失败：{str(e)}")
 
 
 @router.get("/conversations", response_model=Response)
@@ -81,7 +75,7 @@ async def list_conversations(
     """获取对话列表"""
     result = await db.execute(
         select(Conversation)
-        .where(Conversation.user_id == user.id)
+        .where(Conversation.user_id == user.id, Conversation.is_deleted == False)
         .order_by(Conversation.updated_at.desc())
         .limit(50)
     )
@@ -98,7 +92,7 @@ async def get_messages(
     """获取对话消息"""
     result = await db.execute(
         select(Message)
-        .where(Message.conversation_id == conv_id)
+        .where(Message.conversation_id == conv_id, Message.is_deleted == False)
         .order_by(Message.created_at)
     )
     messages = result.scalars().all()
@@ -129,12 +123,14 @@ async def delete_conversation(
 ):
     """删除对话"""
     result = await db.execute(
-        select(Conversation).where(Conversation.id == conv_id)
+        select(Conversation).where(Conversation.id == conv_id, Conversation.is_deleted == False)
     )
     conv = result.scalar_one_or_none()
     if not conv or conv.user_id != user.id:
         raise HTTPException(404, "对话不存在")
-    await db.delete(conv)
+    # 伪删除：将is_deleted字段设置为True
+    conv.is_deleted = True
+    await db.commit()
     return Response(data={"message": "已删除"})
 
 
@@ -189,43 +185,22 @@ async def initialize_model(
     if not model_id:
         raise HTTPException(400, "模型ID不能为空")
     
-    # 从数据库获取模型详情
-    result = await db.execute(
-        select(Model).where(Model.id == model_id, Model.is_active == True)
-    )
-    model = result.scalar_one_or_none()
-    if not model:
-        raise HTTPException(404, "模型不存在或未激活")
-
     # 获取知识库和模型参数
     kb_id = model_data.get("kb_id")
     embedding_model_id = model_data.get("embedding_model_id")
     rerank_model_id = model_data.get("rerank_model_id")
 
-    # 初始化模型变量
-    embedding_model = None
-    rerank_model = None
-
-    # 如果提供了embedding_model_id，从数据库获取embedding模型详情
-    if embedding_model_id:
-        embedding_result = await db.execute(
-            select(Model).where(Model.id == embedding_model_id, Model.is_active == True)
+    try:
+        # 调用service层的初始化方法
+        model = chat_service.initialize_rag_pipeline(
+            model_id=model_id,
+            kb_id=kb_id,
+            embedding_model_id=embedding_model_id,
+            rerank_model_id=rerank_model_id,
+            db=db
         )
-        embedding_model = embedding_result.scalar_one_or_none()
-
-    # 如果提供了rerank_model_id，从数据库获取rerank模型详情
-    if rerank_model_id:
-        rerank_result = await db.execute(
-            select(Model).where(Model.id == rerank_model_id, Model.is_active == True)
-        )
-        rerank_model = rerank_result.scalar_one_or_none()
-
-    # 初始化RAG pipeline，传递模型详情
-    chat_service.rag_pipeline = RAGPipeline(
-        api_key=model.api_key,
-        base_url=model.base_url,
-        embedding_model=embedding_model,
-        rerank_model=rerank_model
-    )
-
-    return Response(data={"message": f"模型 {model.name} 配置验证成功", "model_id": model_id, "model": model.model})
+        return Response(data={"message": f"模型 {model.name} 配置验证成功", "model_id": model_id, "model": model.model})
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"初始化模型失败：{str(e)}")

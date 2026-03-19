@@ -18,14 +18,22 @@ class Settings(BaseSettings):
 
     # ---- 数据库 ----
     DATABASE_URL: str = "postgresql+asyncpg://postgres:P%40ssw0rd@localhost:5432/rag"
+    PM_DATABASE_URL: str = "postgresql+asyncpg://postgres:P%40ssw0rd@localhost:5432/projects"
     REDIS_URL: str = "redis://localhost:6379/0"
+    
+    # ---- Neo4j 图数据库 ----
+    NEO4J_URL: str = "bolt://localhost:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "P@ssw0rd"
 
     # ---- 文件存储 ----
-    UPLOAD_DIR: str = "E:\\ai_code\\github workplace\\zzwzz_rag\\backend\\uploads"
+    # UPLOAD_DIR: str = "E:\\ai_code\\github workplace\\zzwzz_rag\\backend\\uploads"
+    UPLOAD_DIR: str = "D:\\code\\github\\smart_rag\\backend\\uploads"
     MAX_FILE_SIZE_MB: int = 100
 
     # ---- ChromaDB ----
-    CHROMA_PERSIST_DIR: str = "E:\\ai_code\\github workplace\\zzwzz_rag\\backend\\chroma_data"
+    # CHROMA_PERSIST_DIR: str = "E:\\ai_code\\github workplace\\zzwzz_rag\\backend\\chroma_data"
+    CHROMA_PERSIST_DIR: str = "D:\\code\\smart_rag\\backend\\chroma_data"
 
     # ---- LLM ----
     EMBEDDING_DIMENSION: int = 1536
@@ -35,9 +43,11 @@ class Settings(BaseSettings):
     # ---- 检索 ----
     CHUNK_SIZE: int = 512
     CHUNK_OVERLAP: int = 64
-    RETRIEVAL_TOP_K: int = 30          # 粗检索数
-    RERANK_TOP_K: int = 10             # 精排后保留数
+    RETRIEVAL_TOP_K: int = 10          # 粗检索数
+    RERANK_TOP_K: int = 5             # 精排后保留数
     SIMILARITY_THRESHOLD: float = 0.2  # 最低相关性阈值
+    ENABLE_QUERY_REWRITE: bool = True   # 是否进行查询的改写扩写
+    ENABLE_RERANK: bool = True         # 是否进行rerank
 
     # ---- 本地 Embedding (可选) ----
     USE_LOCAL_EMBEDDING: bool = False

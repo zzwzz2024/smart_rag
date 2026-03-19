@@ -29,6 +29,16 @@ const router = createRouter({
           component: () => import('../views/KnowledgeBase.vue')
         },
         {
+          path: 'kb/tags',
+          name: 'TagManagement',
+          component: () => import('../views/TagManagement.vue')
+        },
+        {
+          path: 'kb/domains',
+          name: 'DomainManagement',
+          component: () => import('../views/DomainManagement.vue')
+        },
+        {
           path: 'documents',
           name: 'Documents',
           component: () => import('../views/Documents.vue')

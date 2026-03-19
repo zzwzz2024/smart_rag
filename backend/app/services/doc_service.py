@@ -58,6 +58,8 @@ async def process_document(
             select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id)
         )
         kb = kb_result.scalar_one_or_none()
+        if not kb:
+            raise ValueError(f"知识库不存在: {doc.kb_id}")
         chunk_method = kb.chunk_method if kb else "smart"
 
         # Step 2: 分块
@@ -72,6 +74,9 @@ async def process_document(
         chunk_metadatas = []
 
         for chunk in chunks:
+            # 添加知识库名称到元数据
+            chunk.metadata["kb_name"] = kb.name
+            
             db_chunk = DocumentChunk(
                 id=chunk.id,
                 doc_id=doc.id,
@@ -97,6 +102,10 @@ async def process_document(
         
         if not kb:
             raise ValueError(f"知识库不存在: {doc.kb_id}")
+        
+        # 更新分块的元数据，添加知识库名称
+        for i, chunk in enumerate(chunk_metadatas):
+            chunk["kb_name"] = kb.name
         
         # 获取模型配置
         embedding_model_id = kb.embedding_model_id
@@ -133,9 +142,9 @@ async def process_document(
         )
         kb = kb_result.scalar_one_or_none()
         if kb:
-            # 重新计算
+            # 重新计算，只统计未删除的文档
             count_result = await db.execute(
-                select(Document).where(Document.kb_id == doc.kb_id)
+                select(Document).where(Document.kb_id == doc.kb_id, Document.is_deleted == False)
             )
             all_docs = count_result.scalars().all()
             kb.doc_count = len(all_docs)

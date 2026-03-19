@@ -15,19 +15,36 @@ export const useKbStore = defineStore('kb', {
       page: 1,
       pageSize: 10,
       totalPages: 0
+    },
+    kbPagination: {
+      total: 0,
+      page: 1,
+      pageSize: 10,
+      totalPages: 0
     }
   }),
 
   actions: {
-    async getKnowledgeBases() {
+    async getKnowledgeBases(params?: {
+      page?: number
+      page_size?: number
+    }) {
       this.isLoading = true
       this.error = null
       try {
-        const response = await kbApi.getKnowledgeBases()
-        // 处理不同格式的API响应
-        const knowledgeBases = response.data || response
-        this.knowledgeBases = knowledgeBases
-        return knowledgeBases
+        const data = await kbApi.getKnowledgeBases(params)
+        // 检查响应格式
+        if (data.items) {
+          // 后端返回了分页格式
+          this.knowledgeBases = data.items
+          this.kbPagination = {
+            total: data.total || 0,
+            page: params?.page || 1,
+            pageSize: params?.page_size || 10,
+            totalPages: Math.ceil((data.total || 0) / (params?.page_size || 10))
+          }
+        }
+        return data
       } catch (error: any) {
         this.error = error.response?.data?.message || '获取知识库列表失败'
         throw error
@@ -36,13 +53,11 @@ export const useKbStore = defineStore('kb', {
       }
     },
 
-    async createKnowledgeBase(data: { name: string; description: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number; chunk_method?: string }) {
+    async createKnowledgeBase(data: { name: string; description: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number; chunk_method?: string; tag_ids?: string[]; domain_ids?: string[] }) {
       this.isLoading = true
       this.error = null
       try {
-        const response = await kbApi.createKnowledgeBase(data)
-        // 处理不同格式的API响应
-        const knowledgeBase = response.data || response
+        const knowledgeBase = await kbApi.createKnowledgeBase(data)
         this.knowledgeBases.push(knowledgeBase)
         return knowledgeBase
       } catch (error: any) {
@@ -57,9 +72,7 @@ export const useKbStore = defineStore('kb', {
       this.isLoading = true
       this.error = null
       try {
-        const response = await kbApi.getKnowledgeBase(kbId)
-        // 处理不同格式的API响应
-        const knowledgeBase = response.data || response
+        const knowledgeBase = await kbApi.getKnowledgeBase(kbId)
         this.currentKnowledgeBase = knowledgeBase
         return knowledgeBase
       } catch (error: any) {
@@ -70,13 +83,11 @@ export const useKbStore = defineStore('kb', {
       }
     },
 
-    async updateKnowledgeBase(kbId: string, data: { name?: string; description?: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number; chunk_method?: string }) {
+    async updateKnowledgeBase(kbId: string, data: { name?: string; description?: string; embedding_model_id?: string; rerank_model_id?: string; chunk_size?: number; chunk_overlap?: number; chunk_method?: string; tag_ids?: string[]; domain_ids?: string[] }) {
       this.isLoading = true
       this.error = null
       try {
-        const response = await kbApi.updateKnowledgeBase(kbId, data)
-        // 处理不同格式的API响应
-        const knowledgeBase = response.data || response
+        const knowledgeBase = await kbApi.updateKnowledgeBase(kbId, data)
         const index = this.knowledgeBases.findIndex(kb => kb.id === kbId)
         if (index !== -1) {
           this.knowledgeBases[index] = knowledgeBase
@@ -121,9 +132,8 @@ export const useKbStore = defineStore('kb', {
       this.isLoading = true
       this.error = null
       try {
-        const response = await documentApi.getDocuments(kbId, params)
-        console.log('获取文档列表成功', response)
-        const result = response.data.data || response
+        const result = await documentApi.getDocuments(kbId, params)
+        console.log('获取文档列表成功', result)
         // 使用 $patch 方法更新状态，确保响应式
         this.$patch({
           documents: result.data || [],
@@ -149,8 +159,7 @@ export const useKbStore = defineStore('kb', {
       try {
         const formData = new FormData()
         formData.append('file', file)
-        const response = await documentApi.uploadDocument(kbId, formData)
-        const document = response.data || response
+        const document = await documentApi.uploadDocument(kbId, formData)
         // this.documents.push(document)
         if (Array.isArray(this.documents)) {
           this.documents.push(document); // document 是你收到的这个对象
@@ -202,6 +211,49 @@ export const useKbStore = defineStore('kb', {
     setCurrentKnowledgeBase(knowledgeBase: KnowledgeBase | null) {
       this.currentKnowledgeBase = knowledgeBase
       this.documents = []
+    },
+
+    // 知识库权限管理
+    async getKnowledgeBasePermissions(kbId: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        const response = await kbApi.getKnowledgeBasePermissions(kbId)
+        return response
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '获取知识库权限失败'
+        throw error
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async addKnowledgeBasePermission(kbId: string, roleId: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        const response = await kbApi.addKnowledgeBasePermission(kbId, roleId)
+        return response
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '添加知识库权限失败'
+        throw error
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async removeKnowledgeBasePermission(kbId: string, roleId: string) {
+      this.isLoading = true
+      this.error = null
+      try {
+        const response = await kbApi.removeKnowledgeBasePermission(kbId, roleId)
+        return response
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '移除知识库权限失败'
+        throw error
+      } finally {
+        this.isLoading = false
+      }
     }
   }
 })

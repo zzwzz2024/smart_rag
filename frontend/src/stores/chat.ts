@@ -53,7 +53,7 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async sendMessage(message: string, knowledgeBaseId?: string, modelId?: string) {
+    async sendMessage(message: string, knowledgeBaseId?: string, modelId?: string, contextRound?: number) {
       this.isSending = true
       this.error = null
       try {
@@ -74,7 +74,8 @@ export const useChatStore = defineStore('chat', {
           conversation_id: this.currentConversation?.id,
           query: message,
           kb_ids: knowledgeBaseId ? [knowledgeBaseId] : [],
-          model_id: modelId
+          model_id: modelId,
+          context_round: contextRound
         })
         if (chatResponse.detail) {
           this.error = chatResponse.detail; // 设置全局错误状态

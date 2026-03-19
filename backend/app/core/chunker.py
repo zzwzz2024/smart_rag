@@ -22,6 +22,7 @@ class Chunk:
     chunk_index: int = 0
     token_count: int = 0
     metadata: dict = field(default_factory=dict)
+    parent_id: Optional[str] = None  # 父块ID，用于父子分块结构
 
 
 class SmartChunker:
@@ -65,6 +66,8 @@ class SmartChunker:
             chunks = self._chunk_by_line(content)
         elif chunk_method == "paragraph":
             chunks = self._chunk_by_paragraph(content)
+        elif chunk_method == "hierarchical":
+            chunks = self._chunk_hierarchical(content)
         elif self._is_markdown_structured(content):
             chunks = self._chunk_by_headers(content)
         elif self._is_qa_format(content):
@@ -337,3 +340,69 @@ class SmartChunker:
             chunks.append(Chunk(content=paragraph))
         
         return chunks
+
+    # ───────── 策略 8: 父子分块 ─────────
+    def _chunk_hierarchical(self, content: str) -> List[Chunk]:
+        """父子分块策略，建立块之间的层次关系"""
+        # 第一步：将文档按段落分成父块
+        paragraphs = content.strip().split('\n\n')
+        parent_chunks = []
+        child_chunks = []
+        
+        for i, paragraph in enumerate(paragraphs):
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+            
+            # 创建父块
+            parent_chunk = Chunk(content=paragraph)
+            parent_chunks.append(parent_chunk)
+            
+            # 第二步：将父块分成更小的子块
+            # 按句子或语义单位分割
+            sentences = self._split_sentences(paragraph)
+            current_child = []
+            current_tokens = 0
+            
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                
+                test_child = (" ".join(current_child) + " " + sentence).strip() if current_child else sentence
+                test_tokens = self.count_tokens(test_child)
+                
+                if test_tokens <= self.chunk_size // 2:  # 子块大小为父块的一半
+                    current_child.append(sentence)
+                    current_tokens = test_tokens
+                else:
+                    if current_child:
+                        # 创建子块并关联到父块
+                        child_content = " ".join(current_child)
+                        child_chunk = Chunk(
+                            content=child_content,
+                            parent_id=parent_chunk.id
+                        )
+                        child_chunks.append(child_chunk)
+                        current_child = [sentence]
+                        current_tokens = self.count_tokens(sentence)
+                    else:
+                        # 单个句子就超过子块大小，直接作为子块
+                        child_chunk = Chunk(
+                            content=sentence,
+                            parent_id=parent_chunk.id
+                        )
+                        child_chunks.append(child_chunk)
+            
+            # 处理最后一个子块
+            if current_child:
+                child_content = " ".join(current_child)
+                child_chunk = Chunk(
+                    content=child_content,
+                    parent_id=parent_chunk.id
+                )
+                child_chunks.append(child_chunk)
+        
+        # 合并父块和子块
+        all_chunks = parent_chunks + child_chunks
+        return all_chunks

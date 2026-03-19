@@ -250,6 +250,17 @@
         <span>加载中...</span>
       </div>
     </div>
+    
+    <!-- 分页 -->
+    <div class="pagination">
+      <Pagination
+        :current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        @size-change="handleSizeChange"
+        @current-change="handleCurrentChange"
+      />
+    </div>
   </div>
 </template>
 
@@ -262,6 +273,7 @@ import { useModelStore } from '../stores/model'
 import { ElMessageBox, ElMessage, ElButton, ElIcon } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import type { Evaluation } from '../types'
+import Pagination from '../components/Pagination.vue'
 
 const kbStore = useKbStore()
 const modelStore = useModelStore()
@@ -283,6 +295,11 @@ const editSelectedKnowledgeBase = ref<string>('')
 const editSelectedModel = ref<string>('')
 const currentEditingEvaluation = ref<Evaluation | null>(null)
 
+// 分页相关
+const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
+
 // 获取评估列表
 const getEvaluations = async () => {
   isLoading.value = true
@@ -295,9 +312,19 @@ const getEvaluations = async () => {
     if (queryFilter.value) {
       params.query = queryFilter.value
     }
+    // 添加分页参数
+    params.skip = (currentPage.value - 1) * pageSize.value
+    params.limit = pageSize.value
+    
     const response = await evaluationApi.getEvaluations(params)
-    evaluations.value = response.data || response
-    filteredEvaluations.value = evaluations.value
+    console.log(response)
+    // 检查响应格式
+    if (response.items) {
+      // 后端返回了分页格式
+      evaluations.value = response.items
+      filteredEvaluations.value = response.items
+      total.value = response.total
+    }
   } catch (error: any) {
     // 提取详细错误信息
     const errorMessage = error.response?.data?.detail || '获取评估列表失败'
@@ -326,6 +353,19 @@ const handleQueryFilter = () => {
 const resetFilters = () => {
   selectedFilterKb.value = ''
   queryFilter.value = ''
+  currentPage.value = 1
+  getEvaluations()
+}
+
+// 分页处理
+const handleSizeChange = (size: number) => {
+  pageSize.value = size
+  currentPage.value = 1
+  getEvaluations()
+}
+
+const handleCurrentChange = (current: number) => {
+  currentPage.value = current
   getEvaluations()
 }
 
@@ -388,8 +428,8 @@ const editEvaluation = (evaluation: Evaluation) => {
   editEvalQuery.value = evaluation.query
   editEvalReference.value = evaluation.reference_answer
   // 预填充知识库和模型选择
-  editSelectedKnowledgeBase.value = evaluation.kb_id
-  editSelectedModel.value = evaluation.model_id
+  editSelectedKnowledgeBase.value = evaluation.kb_id || ''
+  editSelectedModel.value = evaluation.model_id || ''
   showEditModal.value = true
 }
 
@@ -398,8 +438,8 @@ const copyEvaluation = (evaluation: Evaluation) => {
   // 预填充创建评估模态框的表单数据
   newEvalQuery.value = evaluation.query
   newEvalReference.value = evaluation.reference_answer
-  selectedKnowledgeBase.value = evaluation.kb_id
-  selectedModel.value = evaluation.model_id
+  selectedKnowledgeBase.value = evaluation.kb_id || ''
+  selectedModel.value = evaluation.model_id || ''
   // 打开创建评估模态框
   showCreateModal.value = true
 }
@@ -462,7 +502,7 @@ const updateEvaluation = async () => {
 }
 
 // 删除评估
-const deleteEvaluation = async (evalId: number) => {
+const deleteEvaluation = async (evalId: string | number) => {
   ElMessageBox.confirm(
     '确定要删除这个评估吗？删除后将无法恢复。',
     '删除确认',
@@ -859,6 +899,13 @@ watch(
   color: #666;
 }
 
+/* 分页样式 */
+.pagination {
+  margin-top: 30px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .evaluation-list {
@@ -874,6 +921,10 @@ watch(
   .modal-content {
     padding: 20px;
     margin: 20px;
+  }
+  
+  .pagination {
+    justify-content: center;
   }
 }
 </style>

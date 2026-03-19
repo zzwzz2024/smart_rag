@@ -3,7 +3,7 @@ import type { Evaluation } from '../types'
 
 export const evaluationApi = {
   // 获取评估列表
-  getEvaluations(params?: { kb_id?: string, query?: string }) {
+  getEvaluations(params?: { kb_id?: string, query?: string, skip?: number, limit?: number }) {
     return request<Evaluation[]>({
       url: '/eval',
       method: 'get',
@@ -26,7 +26,7 @@ export const evaluationApi = {
   },
 
   // 删除评估
-  deleteEvaluation(evalId: number) {
+  deleteEvaluation(evalId: string | number) {
     return request({
       url: `/eval/${evalId}`,
       method: 'delete'
@@ -34,7 +34,7 @@ export const evaluationApi = {
   },
 
   // 更新评估（重新评估）
-  updateEvaluation(evalId: number, data: {
+  updateEvaluation(evalId: string | number, data: {
     query: string
     reference_answer: string
     kb_ids: string[]

@@ -29,14 +29,20 @@ class Generator:
     def __init__(self,api_key=None,base_url=None,model_name=None):
         self.clients = {}  # 存储不同模型的客户端
         print(f"Generator函数初始化")
-        self.default_client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=120.0
-        )
+        # 只有当api_key和base_url都不为None时，才创建默认客户端
+        if api_key and base_url:
+            self.default_client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=120.0
+            )
+        else:
+            self.default_client = None
         print(f"Generator函数初始化完成")
 
-    def _get_or_create_client(self, model_id: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None, base_url: Optional[str] = None) -> AsyncOpenAI:
+    def _get_or_create_client(self, model_id: Optional[str] = None,
+                              model: Optional[str] = None, api_key: Optional[str] = None,
+                              base_url: Optional[str] = None) -> AsyncOpenAI:
         """
         获取或创建对应模型的客户端
         """
@@ -44,12 +50,13 @@ class Generator:
         client_key = model_id or model or "default"
         
         if client_key not in self.clients:
-            # 只使用传递的api_key，不再使用默认api_key
-            if not api_key:
-                raise ValueError("API key is required for model client creation")
-            # 只使用传递的base_url
-            if not base_url:
-                raise ValueError("Base URL is required for model client creation")
+            # 如果没有传递api_key和base_url，使用默认客户端
+            if not api_key or not base_url:
+                if self.default_client:
+                    return self.default_client
+                else:
+                    raise ValueError("API key and base URL are required for model client creation")
+            
             # 这里可以根据model_id从数据库获取模型配置
             # 例如，获取模型的base_url等
             self.clients[client_key] = AsyncOpenAI(
@@ -62,109 +69,145 @@ class Generator:
         return self.clients[client_key]
 
     def _build_messages(
-            self,
-            query: str,
-            context: str,
-            conversation_history: List[dict]
-    ) -> List[dict]:
-        """构建消息历史"""
-        system_prompt = """你是一个严谨的智能问答助手，请严格遵循：
-    - 仅基于用户提供的【参考信息】回答问题；
-    - 若参考信息中无相关内容，必须回复：“根据提供的信息，未检索到相关内容”；
-    - 禁止编造、推测或使用外部知识；
-    - 引用时请注明“参考信息 X”；
-    - 回答需简洁、准确、有条理。
-    - 如果问你是谁，文档中没有相关内容，必须回复："我是你的智能检索助手"
-    """
+                self,
+                query: str,
+                context: str,
+                conversation_history: List[dict]
+        ) -> List[dict]:
+            """构建消息历史"""
+            from backend.app.core.prompts import GENERATOR_PROMPT
+            system_prompt = GENERATOR_PROMPT
 
-        messages = [{"role": "system", "content": system_prompt}]
+            messages = [{"role": "system", "content": system_prompt}]
 
-        # 添加历史对话（限制长度）
-        if conversation_history:
-            messages.extend(conversation_history[-4:])
+            # 添加历史对话（限制长度）
+            if conversation_history:
+                messages.extend(conversation_history[-4:])
 
-        # 将 context 和 query 合并到 user 消息中
-        user_content = (
-            f"【参考信息】\n{context}\n\n"
-            f"【问题】\n{query}"
-        )
-        messages.append({"role": "user", "content": user_content})
+            # 将 context 和 query 合并到 user 消息中
+            user_content = (
+                f"【参考信息】\n{context}\n\n"
+                f"【问题】\n{query}"
+            )
+            messages.append({"role": "user", "content": user_content})
 
-        return messages
+            return messages
 
+    def _build_relevance_check_messages(self, query: str, context: str) -> List[dict]:
+            """构建相关性检查消息"""
+            from backend.app.core.prompts import RELEVANCE_JUDGMENT_PROMPT
+            system_prompt = RELEVANCE_JUDGMENT_PROMPT
+
+            messages = [{"role": "system", "content": system_prompt}]
+
+            user_content = (
+                f"【参考信息】\n{context}\n\n"
+                f"【问题】\n{query}\n\n"
+                f"请判断："
+            )
+            messages.append({"role": "user", "content": user_content})
+
+            return messages
 
     async def generate(
-        self,
-        query: str,
-        retrieved_chunks: List[RetrievalResult],
-        conversation_history: List[dict] = None,
-        model: Optional[str] = None,
-        model_id: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        temperature: Optional[float] = None,
-        top_p: Optional[float] = None,
-    ) -> GenerationResult:
-        """
-        生成答案
-        """
-        start_time = time.time()
+                self,
+                query: str,
+                retrieved_chunks: List[RetrievalResult],
+                conversation_history: List[dict] = None,
+                model: Optional[str] = None,
+                model_id: Optional[str] = None,
+                api_key: Optional[str] = None,
+                base_url: Optional[str] = None,
+                temperature: Optional[float] = None,
+                top_p: Optional[float] = 0.95,
+        ) -> GenerationResult:
+            """
+            生成答案
+            """
+            start_time = time.time()
 
-        if not model:
-            raise ValueError("Model is required for generation")
-        temperature = temperature or settings.LLM_TEMPERATURE
+            if not model:
+                # 如果没有提供模型，使用默认模型
+                model = "gpt-3.5-turbo"
+            temperature = temperature or 0.7
 
-        # 构造上下文
-        context = self._build_context(retrieved_chunks)
+            # 构造上下文
+            context = self._build_context(retrieved_chunks)
 
-        # 构造消息历史
-        # messages = self._build_messages(query, context, conversation_history or [])
+            # 构造消息历史
+            # messages = self._build_messages(query, context, conversation_history or [])
 
-        try:
-            # 获取或创建对应模型的客户端
-            client = self._get_or_create_client(model_id, model, api_key, base_url)
-            
-            response = await client.chat.completions.create(
-                model=model,
-                messages= self._build_messages(query, context, conversation_history or []),
-                temperature=temperature,
-                top_p=top_p,
-                max_tokens=settings.LLM_MAX_TOKENS,
-            )
+            try:
+                # 获取或创建对应模型的客户端
+                client = self._get_or_create_client(model_id, model, api_key, base_url)
 
-            answer = response.choices[0].message.content
-            response_time = time.time() - start_time
+                # 第一步：先让模型判断是否有相关内容
+                relevance_check_messages = self._build_relevance_check_messages(query, context)
+                relevance_response = await client.chat.completions.create(
+                    model=model,
+                    messages=relevance_check_messages,
+                    temperature=0.1,  # 降低温度，让判断更严格
+                    max_tokens=50,
+                )
 
-            # 计算置信度 (基于检索结果的数量和质量)
-            confidence = self._calculate_confidence(retrieved_chunks)
+                relevance_result = relevance_response.choices[0].message.content.strip().lower()
+                # 构建引用（无论是否有相关内容，都返回检索到的 chunks）
+                citations = self._build_citations(retrieved_chunks)
 
-            # 构建引用
-            citations = self._build_citations(retrieved_chunks)
+                # 如果判断为无相关内容，返回提示但保留引用信息
+                if "no" in relevance_result or "无" in relevance_result:
+                    response_time = time.time() - start_time
+                    return GenerationResult(
+                        answer="根据提供的信息，未检索到相关内容",
+                        confidence=0.3,
+                        citations=citations,
+                        response_time=response_time,
+                        token_usage={"response_time": round(response_time, 2)},
+                    )
 
-            token_usage = {
-                "prompt": response.usage.prompt_tokens if response.usage else 0,
-                "completion": response.usage.completion_tokens if response.usage else 0,
-                "total": response.usage.total_tokens if response.usage else 0,
-                "response_time": round(response_time, 2),
-            }
+                # 第二步：有相关内容，生成答案
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=self._build_messages(query, context, conversation_history or []),
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_tokens=1000,
+                )
 
-            return GenerationResult(
-                answer=answer,
-                confidence=confidence,
-                citations=citations,
-                response_time=response_time,
-                token_usage=token_usage,
-            )
-        except Exception as e:
-            logger.error(f"Generation failed: {e}")
-            response_time = time.time() - start_time
-            return GenerationResult(
-                answer="抱歉，生成答案时出现错误，请稍后再试。",
-                confidence=0.0,
-                citations=[],
-                response_time=response_time,
-                token_usage={"response_time": round(response_time, 2)},
-            )
+                answer = response.choices[0].message.content
+                response_time = time.time() - start_time
+                logger.info(f"大模型汇总回答Answer: {answer}")
+
+                # 计算置信度 (基于检索结果的数量和质量)
+                confidence = self._calculate_confidence(retrieved_chunks)
+
+                # 构建引用
+                # citations = self._build_citations(retrieved_chunks)
+
+                token_usage = {
+                    "prompt": response.usage.prompt_tokens if response.usage else 0,
+                    "completion": response.usage.completion_tokens if response.usage else 0,
+                    "total": response.usage.total_tokens if response.usage else 0,
+                    "response_time": round(response_time, 2),
+                }
+
+                return GenerationResult(
+                    answer=answer,
+                    confidence=confidence,
+                    citations=citations,
+                    response_time=response_time,
+                    token_usage=token_usage,
+                )
+            except Exception as e:
+                logger.error(f"Generation failed: {e}")
+                response_time = time.time() - start_time
+                return GenerationResult(
+                    answer="抱歉，生成答案时出现错误，请稍后再试。",
+                    confidence=0.0,
+                    citations=[],
+                    response_time=response_time,
+                    token_usage={"response_time": round(response_time, 2)},
+                )
 
     def _build_context(self, retrieved_chunks: List[RetrievalResult]) -> str:
         """构建上下文"""
@@ -172,8 +215,15 @@ class Generator:
             return ""
 
         context_parts = []
-        for chunk in retrieved_chunks:
-            context_parts.append(f"参考信息 {chunk.chunk_id}:\n{chunk.content}\n---")
+        for i, chunk in enumerate(retrieved_chunks):
+            # 使用知识库名称而不是 ID
+            kb_name = chunk.metadata.get("kb_name", "知识库")
+            # 确保知识库名称是字符串
+            if not isinstance(kb_name, str):
+                kb_name = "知识库"
+            # 构建详细的参考信息，包含文件名和知识库名称
+            filename = chunk.metadata.get("filename", "未知文件")
+            context_parts.append(f"参考信息 {kb_name}（{filename}）:\n{chunk.content}\n---")
 
         return "\n".join(context_parts)
 

@@ -94,12 +94,19 @@ class VectorStore:
         kb_id: str,
         query: str,
         top_k: int = 20,
+        doc_ids: Optional[List[str]] = None,
     ) -> List[SearchResult]:
         """向量检索"""
         collection = self._get_collection(kb_id)
 
         if collection.count() == 0:
             return []
+
+        # 构建 where 条件
+        where_clause = None
+        if doc_ids:
+            where_clause = {"doc_id": {"$in": doc_ids}}
+
         logger.info(f"query_embedding开始")
         query_embedding = await self.embedder.embed_query(query)
         logger.info(f"query_embedding完成")
@@ -108,6 +115,7 @@ class VectorStore:
             query_embeddings=[query_embedding],
             n_results=min(top_k, collection.count()),
             include=["documents", "metadatas", "distances"],
+            where = where_clause,
         )
 
         search_results = []

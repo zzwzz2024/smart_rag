@@ -87,43 +87,86 @@
         <div class="modal-footer">
           <!-- 文档块分页控件 -->
           <div class="chunk-pagination">
-            <div class="pagination-info">
-              共 {{ chunkPagination.total }} 个段落，
-              第 {{ chunkPagination.currentPage }} / {{ chunkPagination.totalPages }} 页
-            </div>
-            <div class="pagination-controls">
-              <button
-                class="btn btn-outline"
-                @click="changeChunkPage(1)"
-                :disabled="chunkPagination.currentPage === 1"
-              >
-                首页
-              </button>
-              <button
-                class="btn btn-outline"
-                @click="changeChunkPage(chunkPagination.currentPage - 1)"
-                :disabled="chunkPagination.currentPage === 1"
-              >
-                上一页
-              </button>
-              <button
-                class="btn btn-outline"
-                @click="changeChunkPage(chunkPagination.currentPage + 1)"
-                :disabled="chunkPagination.currentPage >= chunkPagination.totalPages"
-              >
-                下一页
-              </button>
-              <button
-                class="btn btn-outline"
-                @click="changeChunkPage(chunkPagination.totalPages)"
-                :disabled="chunkPagination.currentPage >= chunkPagination.totalPages"
-              >
-                末页
-              </button>
-            </div>
+            <Pagination
+              :current-page="chunkPagination.currentPage"
+              :page-size="chunkPagination.pageSize"
+              :total="chunkPagination.total"
+              @size-change="handleChunkSizeChange"
+              @current-change="changeChunkPage"
+            />
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showDocumentModal = false">
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 文档权限管理模态框 -->
+    <div v-if="showPermissionModal" class="modal-overlay" @click="showPermissionModal = false">
+      <div class="modal-content permission-modal" @click.stop>
+        <div class="modal-header">
+          <h3>文档权限管理 - {{ selectedDocumentForPermission?.filename }}</h3>
+        </div>
+        <div class="modal-body">
+          <div v-if="isLoadingPermissions" class="loading-state">
+            <div class="loading"></div>
+            <span>加载权限中...</span>
+          </div>
+          <div v-else>
+            <!-- 已有权限列表 -->
+            <div class="permission-section">
+              <h4>已有权限</h4>
+              <div v-if="documentPermissions.length > 0" class="permission-list">
+                <div
+                  v-for="permission in documentPermissions"
+                  :key="permission.role_id"
+                  class="permission-item"
+                >
+                  <span class="role-info">{{ permission.role_name }} ({{ permission.role_code }})</span>
+                  <button
+                    class="btn btn-danger btn-sm"
+                    @click="removePermission(permission.role_id)"
+                  >
+                    移除
+                  </button>
+                </div>
+              </div>
+              <div v-else class="empty-state no-permissions">
+                <p>暂无权限设置</p>
+              </div>
+            </div>
+
+            <!-- 添加权限 -->
+            <div class="permission-section" style="margin-top: 20px;">
+              <h4>添加权限</h4>
+              <div class="add-permission-form">
+                <select v-model="selectedRoleId" class="form-control" style="margin-bottom: 16px;">
+                  <option value="">选择角色</option>
+                  <option
+                    v-for="role in availableRoles"
+                    :key="role.id"
+                    :value="role.id"
+                  >
+                    {{ role.name }} ({{ role.code }})
+                  </option>
+                </select>
+                <button
+                  class="btn btn-primary"
+                  @click="addPermission"
+                  :disabled="!selectedRoleId"
+                >
+                  添加权限
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="showPermissionModal = false">
               关闭
             </button>
           </div>
@@ -213,6 +256,13 @@
               <td>{{ formatTime(doc.created_at) }}</td>
               <td>
                 <button
+                  class="btn btn-primary"
+                  @click="manageDocumentPermissions(doc)"
+                  style="margin-right: 8px;"
+                >
+                  权限
+                </button>
+                <button
                   class="btn btn-danger"
                   @click="confirmDeleteDocument(doc.id)"
                 >
@@ -226,40 +276,13 @@
       
       <!-- 分页控件 -->
       <div v-if="selectedKnowledgeBase && kbStore.documentPagination.total > 0" class="pagination">
-        <div class="pagination-info">
-          共 {{ kbStore.documentPagination.total }} 条记录，
-          第 {{ kbStore.documentPagination.page }} / {{ kbStore.documentPagination.totalPages }} 页
-        </div>
-        <div class="pagination-controls">
-          <button
-            class="btn btn-outline"
-            @click="changePage(1)"
-            :disabled="kbStore.documentPagination.page === 1 || kbStore.isLoading"
-          >
-            首页
-          </button>
-          <button
-            class="btn btn-outline"
-            @click="changePage(kbStore.documentPagination.page - 1)"
-            :disabled="kbStore.documentPagination.page === 1 || kbStore.isLoading"
-          >
-            上一页
-          </button>
-          <button
-            class="btn btn-outline"
-            @click="changePage(kbStore.documentPagination.page + 1)"
-            :disabled="kbStore.documentPagination.page >= kbStore.documentPagination.totalPages || kbStore.isLoading"
-          >
-            下一页
-          </button>
-          <button
-            class="btn btn-outline"
-            @click="changePage(kbStore.documentPagination.totalPages)"
-            :disabled="kbStore.documentPagination.page >= kbStore.documentPagination.totalPages || kbStore.isLoading"
-          >
-            末页
-          </button>
-        </div>
+        <Pagination
+          :current-page="kbStore.documentPagination.page"
+          :page-size="searchParams.page_size"
+          :total="kbStore.documentPagination.total"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
       </div>
       
 <!--      <div v-if="kbStore.documents.length === 0 && !kbStore.isLoading" class="empty-state">-->
@@ -284,7 +307,9 @@ import { ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useKbStore } from '../stores/kb'
 import { documentApi } from '../api/document'
+import { roleApi } from '../api/system'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import Pagination from '../components/Pagination.vue'
 
 const route = useRoute()
 const kbStore = useKbStore()
@@ -298,6 +323,14 @@ const selectedDocument = ref<any>(null)
 const documentChunks = ref<any[]>([])
 const isLoadingDocument = ref(false)
 const isInitializingModels = ref(false)
+
+// 权限管理相关状态
+const showPermissionModal = ref(false)
+const selectedDocumentForPermission = ref<any>(null)
+const documentPermissions = ref<any[]>([])
+const availableRoles = ref<any[]>([])
+const selectedRoleId = ref('')
+const isLoadingPermissions = ref(false)
 const searchParams = ref({
   filename: '',
   created_from: '',
@@ -340,6 +373,13 @@ const calculatePaginatedChunks = () => {
 const changeChunkPage = (page: number) => {
   if (page < 1 || page > chunkPagination.value.totalPages) return
   chunkPagination.value.currentPage = page
+  calculatePaginatedChunks()
+}
+
+// 文档块分页大小变化
+const handleChunkSizeChange = (size: number) => {
+  chunkPagination.value.pageSize = size
+  chunkPagination.value.currentPage = 1
   calculatePaginatedChunks()
 }
 
@@ -397,7 +437,7 @@ const viewDocument = async (doc: any) => {
   isLoadingDocument.value = true
   try {
     const response = await documentApi.getDocumentChunks(doc.id)
-    const chunks = response.data || response
+    const chunks = response || []
     // 为每个分块添加索引属性
     documentChunks.value = chunks.map((chunk: any, index: number) => ({
       ...chunk,
@@ -448,6 +488,18 @@ const changePage = (page: number) => {
   searchDocuments()
 }
 
+// 分页处理
+const handleSizeChange = (size: number) => {
+  searchParams.value.page_size = size
+  searchParams.value.page = 1
+  searchDocuments()
+}
+
+const handleCurrentChange = (current: number) => {
+  searchParams.value.page = current
+  searchDocuments()
+}
+
 // 格式化文件大小
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 Bytes'
@@ -477,6 +529,86 @@ const initializeKbModels = async (kbId: string) => {
   } finally {
     isInitializingModels.value = false
   }
+}
+
+// 打开权限管理模态框
+const manageDocumentPermissions = async (doc: any) => {
+  selectedDocumentForPermission.value = doc
+  showPermissionModal.value = true
+  await loadDocumentPermissions(doc.id)
+  await loadAvailableRoles()
+}
+
+// 加载文档权限
+const loadDocumentPermissions = async (docId: string) => {
+  isLoadingPermissions.value = true
+  try {
+    const response = await documentApi.getDocumentPermissions(docId)
+    documentPermissions.value = response || []
+  } catch (error: any) {
+    console.error('加载文档权限失败:', error)
+    const errorMessage = error.response?.data?.detail || '加载文档权限失败'
+    ElMessage.error(errorMessage)
+  } finally {
+    isLoadingPermissions.value = false
+  }
+}
+
+// 加载可用角色
+const loadAvailableRoles = async () => {
+  try {
+    const response = await roleApi.getRoles()
+    availableRoles.value = response || []
+  } catch (error: any) {
+    console.error('加载角色列表失败:', error)
+    const errorMessage = error.response?.data?.detail || '加载角色列表失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 添加权限
+const addPermission = async () => {
+  if (!selectedDocumentForPermission.value || !selectedRoleId.value) return
+  
+  try {
+    await documentApi.addDocumentPermission(selectedDocumentForPermission.value.id, selectedRoleId.value)
+    ElMessage.success('权限添加成功')
+    await loadDocumentPermissions(selectedDocumentForPermission.value.id)
+    selectedRoleId.value = ''
+  } catch (error: any) {
+    console.error('添加权限失败:', error)
+    const errorMessage = error.response?.data?.detail || '添加权限失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 移除权限
+const removePermission = async (roleId: string) => {
+  if (!selectedDocumentForPermission.value) return
+  
+  ElMessageBox.confirm(
+    '确定要移除这个角色的访问权限吗？',
+    '移除权限确认',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  )
+    .then(async () => {
+      try {
+        await documentApi.removeDocumentPermission(selectedDocumentForPermission.value.id, roleId)
+        ElMessage.success('权限移除成功')
+        await loadDocumentPermissions(selectedDocumentForPermission.value.id)
+      } catch (error: any) {
+        console.error('移除权限失败:', error)
+        const errorMessage = error.response?.data?.detail || '移除权限失败'
+        ElMessage.error(errorMessage)
+      }
+    })
+    .catch(() => {
+      // 用户取消操作
+    })
 }
 
 // 监听知识库选择变化
@@ -859,7 +991,7 @@ watch(
 .pagination {
   margin-top: 20px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
@@ -965,5 +1097,76 @@ watch(
   .document-table td {
     padding: 8px 12px;
   }
+}
+
+/* 权限管理模态框样式 */
+.permission-modal {
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.permission-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.permission-list {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.permission-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.permission-item:last-child {
+  border-bottom: none;
+}
+
+.role-info {
+  font-size: 14px;
+  color: #333;
+}
+
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.add-permission-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.add-permission-form select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+/* 暂无权限提示样式 */
+.no-permissions {
+  background-color: #fff3cd;
+  border: 1px solid #ffeeba;
+  color: #856404;
+  padding: 20px;
+  border-radius: 4px;
+  text-align: center;
+  font-weight: 500;
+  font-size: 16px;
 }
 </style>

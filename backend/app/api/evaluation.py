@@ -66,7 +66,7 @@ pipeline = RAGPipeline()
 # 加载语义相似度模型
 from backend.app.config import get_settings
 settings = get_settings()
-semantic_model = SentenceTransformer(settings.LOCAL_EMBEDDING_MODEL)
+semantic_model = ""#SentenceTransformer(settings.LOCAL_EMBEDDING_MODEL)
 
 # 评分辅助函数
 async def calculate_semantic_similarity(answer: str, reference: str, model=None) -> float:
@@ -124,36 +124,8 @@ async def contains_opposite_meaning(answer: str, reference: str, model=None) -> 
         )
         
         # 构建提示
-        prompt = f"""请判断以下两个文本是否包含相反的语义。
-
-文本1: {answer_clean}
-文本2: {reference_clean}
-
-请回答"是"或"否"，并简要说明理由。
-
-示例：
-文本1: 今天天气很好
-文本2: 今天天气不好
-回答：是，文本1说天气很好，文本2说天气不好，语义相反。
-
-文本1: 我喜欢苹果
-文本2: 我不喜欢苹果
-回答：是，文本1表示喜欢，文本2表示不喜欢，语义相反。
-
-文本1: 他很高
-文本2: 他不高
-回答：是，文本1表示高，文本2表示不高，语义相反。
-
-文本1: 今天是晴天
-文本2: 今天阳光明媚
-回答：否，两个文本都表示天气好，语义相同。
-
-文本1: 我吃了早餐
-文本2: 我已经吃过早饭了
-回答：否，两个文本都表示吃过早餐，语义相同。
-
-现在请判断：
-"""
+        from backend.app.core.prompts import SEMANTIC_OPPOSITE_PROMPT
+        prompt = SEMANTIC_OPPOSITE_PROMPT.format(text1=answer_clean, text2=reference_clean)
         
         # 调用大模型
         response = await client.chat.completions.create(
@@ -440,35 +412,52 @@ async def get_eval_report(
 async def get_evaluations(
     kb_id: str = None,
     query: str = None,
+    skip: int = 0,
+    limit: int = 10,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """获取评估列表"""
     import logging
+    from sqlalchemy import func
     logger = logging.getLogger(__name__)
     
-    logger.info(f"接收到的参数: kb_id={kb_id}, query={query}")
+    logger.info(f"接收到的参数: kb_id={kb_id}, query={query}, skip={skip}, limit={limit}")
     
     from sqlalchemy import or_
     
-    db_query = select(Evaluation).order_by(Evaluation.created_at.desc())
+    # 构建查询
+    base_query = select(Evaluation).where(Evaluation.is_deleted == False)
     
     # 按知识库ID过滤
     if kb_id:
         logger.info(f"应用知识库过滤: {kb_id}")
-        db_query = db_query.where(Evaluation.kb_id == kb_id)
+        base_query = base_query.where(Evaluation.kb_id == kb_id)
     
     # 按问题名称过滤
     if query:
         logger.info(f"应用查询过滤: {query}")
-        db_query = db_query.where(Evaluation.query.ilike(f"%{query}%"))
+        base_query = base_query.where(Evaluation.query.ilike(f"%{query}%"))
+    
+    # 计算总数
+    count_query = select(func.count()).select_from(base_query.subquery())
+    count_result = await db.execute(count_query)
+    total = count_result.scalar()
+    
+    # 应用排序和分页
+    db_query = base_query.order_by(Evaluation.created_at.desc()).offset(skip).limit(limit)
     
     logger.info(f"生成的SQL查询: {db_query}")
     
     result = await db.execute(db_query)
     evaluations = result.scalars().all()
-    logger.info(f"查询结果数量: {len(evaluations)}")
-    return Response(data=[EvalResponse.model_validate(eval) for eval in evaluations])
+    logger.info(f"查询结果数量: {len(evaluations)}, 总数: {total}")
+    
+    # 返回分页格式
+    return Response(data={
+        "items": [EvalResponse.model_validate(eval) for eval in evaluations],
+        "total": total
+    })
 
 
 @router.post("", response_model=Response)
@@ -750,7 +739,7 @@ async def update_evaluation(
     score = min(1.0, max(0.0, score))
     
     # 获取现有评估
-    result = await db.execute(select(Evaluation).where(Evaluation.id == eval_id))
+    result = await db.execute(select(Evaluation).where(Evaluation.id == eval_id, Evaluation.is_deleted == False))
     evaluation = result.scalar_one_or_none()
     
     if not evaluation:
@@ -777,13 +766,14 @@ async def delete_evaluation(
     user: User = Depends(get_current_user),
 ):
     """删除评估"""
-    result = await db.execute(select(Evaluation).where(Evaluation.id == eval_id))
+    result = await db.execute(select(Evaluation).where(Evaluation.id == eval_id, Evaluation.is_deleted == False))
     evaluation = result.scalar_one_or_none()
     
     if not evaluation:
         raise HTTPException(status_code=404, detail="评估不存在")
     
-    await db.delete(evaluation)
+    # 伪删除：将is_deleted字段设置为True
+    evaluation.is_deleted = True
     await db.commit()
     
     return Response(data={"message": "评估已删除"})

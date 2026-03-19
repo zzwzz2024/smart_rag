@@ -143,11 +143,9 @@
 
     <!-- 分页 -->
     <div class="api-auth-pagination">
-      <el-pagination
-        v-model:current-page="pagination.currentPage"
-        v-model:page-size="pagination.pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
+      <Pagination
+        :current-page="pagination.currentPage"
+        :page-size="pagination.pageSize"
         :total="pagination.total"
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
@@ -225,11 +223,9 @@
               <el-table-column prop="ip" label="IP地址" width="150" />
             </el-table>
             <div class="log-pagination">
-              <el-pagination
-                v-model:current-page="logPagination.currentPage"
-                v-model:page-size="logPagination.pageSize"
-                :page-sizes="[10, 20, 50, 100]"
-                layout="total, sizes, prev, pager, next, jumper"
+              <Pagination
+                :current-page="logPagination.currentPage"
+                :page-size="logPagination.pageSize"
                 :total="logPagination.total"
                 @size-change="handleLogSizeChange"
                 @current-change="handleLogCurrentChange"
@@ -297,6 +293,7 @@ import { Plus, Edit, Delete, Search, Refresh, View } from '@element-plus/icons-v
 import { useKbStore } from '../stores/kb'
 import request from '../api/request'
 import type { KnowledgeBase } from '../types'
+import Pagination from '../components/Pagination.vue'
 // 引入ECharts
 import * as echarts from 'echarts'
 

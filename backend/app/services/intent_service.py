@@ -1,0 +1,278 @@
+"""
+意图识别服务
+"""
+from typing import List, Optional
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from backend.app.models import User
+from backend.app.models.knowledge_base import KnowledgeBase
+from loguru import logger
+from backend.app.models.knowledge_base import KnowledgeBaseRole
+from backend.app.models.system import Role
+
+class IntentService:
+    """
+    意图识别服务
+    """
+    
+    def __init__(self, db: AsyncSession, user_id: str):
+        """
+        初始化意图识别服务
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+        """
+        self.db = db
+        self.user_id = user_id
+    
+    async def match_knowledge_bases(self, query: str) -> List[str]:
+        """
+        匹配知识库
+        
+        Args:
+            query: 用户查询
+            
+        Returns:
+            List[str]: 匹配的知识库ID列表
+        """
+        # 1. 获取用户的所有知识库
+        kbs = await self._get_user_knowledge_bases()
+        
+        if not kbs:
+            return []
+        
+        # 2. 使用大模型进行意图识别和知识库匹配
+        matched_kbs = await self._match_kbs_with_llm(query, kbs)
+        
+        return [kb.id for kb in matched_kbs]
+
+    async def _get_user_knowledge_bases(self) -> List[KnowledgeBase]:
+        """
+        获取用户的所有知识库
+
+        Returns:
+            List[KnowledgeBase]: 知识库列表
+        """
+        # 1. 先获取用户的角色 ID
+        user_result = await self.db.execute(
+            select(User)
+            .where(User.id == self.user_id)
+        )
+        user = user_result.scalar_one_or_none()
+
+        # 2. 查询用户拥有的知识库
+        owned_kbs_result = await self.db.execute(
+            select(KnowledgeBase)
+            .options(
+                selectinload(KnowledgeBase.tags),
+                selectinload(KnowledgeBase.domains)
+            )
+            .where((KnowledgeBase.owner_id == self.user_id)
+                   & (KnowledgeBase.is_deleted == False))
+        )
+        owned_kbs = owned_kbs_result.scalars().all()
+
+        # 3. 查询用户通过角色授权的知识库
+        authorized_kbs_result = await self.db.execute(
+            select(KnowledgeBase)
+            .options(
+                selectinload(KnowledgeBase.tags),
+                selectinload(KnowledgeBase.domains)
+            )
+            .join(KnowledgeBaseRole, KnowledgeBase.id == KnowledgeBaseRole.kb_id)
+            .join(Role, Role.id == KnowledgeBaseRole.role_id)
+            .where(KnowledgeBaseRole.is_deleted == False,
+                       (Role.id == user.role_id),
+                        KnowledgeBase.is_deleted == False
+                   )
+        )
+        authorized_kbs = authorized_kbs_result.scalars().all()
+        # 4. 合并并去重（避免重复的知识库）
+        kb_dict = {kb.id: kb for kb in owned_kbs + authorized_kbs}
+        for kb in authorized_kbs:
+             kb_dict[kb.id] = kb
+        return list(kb_dict.values())
+
+    def _extract_keywords(self, query: str) -> List[str]:
+        """
+        提取关键词
+        
+        Args:
+            query: 用户查询
+            
+        Returns:
+            List[str]: 关键词列表
+        """
+        # 直接使用大模型进行关键词提取
+        # 这里简化处理，实际项目中可以调用大模型API
+        import re
+        # 移除标点符号
+        query = re.sub(r'[\s\W]+', ' ', query)
+        # 分词
+        keywords = query.lower().split()
+        # 去重
+        keywords = list(set(keywords))
+        return keywords
+    
+    async def _match_kbs(self, kbs: List[KnowledgeBase], keywords: List[str]) -> List[KnowledgeBase]:
+        """
+        匹配知识库
+        
+        Args:
+            kbs: 知识库列表
+            keywords: 关键词列表
+            
+        Returns:
+            List[KnowledgeBase]: 匹配的知识库列表
+        """
+        matched_kbs = []
+        
+        for kb in kbs:
+            # 计算匹配分数
+            score = await self._calculate_match_score(kb, keywords)
+            if score > 0:
+                matched_kbs.append((kb, score))
+        
+        # 按分数排序，返回前3个匹配的知识库
+        matched_kbs.sort(key=lambda x: x[1], reverse=True)
+        return [kb for kb, _ in matched_kbs[:3]]
+    
+    async def _match_kbs_with_llm(self, query: str, kbs: List[KnowledgeBase]) -> List[KnowledgeBase]:
+        """
+        使用大模型进行意图识别和知识库匹配
+        
+        Args:
+            query: 用户查询
+            kbs: 知识库列表
+            
+        Returns:
+            List[KnowledgeBase]: 匹配的知识库列表
+        """
+        from backend.app.core.generator import Generator
+        from backend.app.models.model import Model
+        from sqlalchemy import select
+        
+        try:
+            # 获取默认的聊天模型
+            model_result = await self.db.execute(
+                select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
+            )
+            chat_model = model_result.scalar_one_or_none()
+            
+            # 如果没有找到聊天模型，使用关键词匹配作为兜底
+            if not chat_model:
+                keywords = self._extract_keywords(query)
+                return await self._match_kbs(kbs, keywords)
+            
+            # 构建知识库信息
+            kb_info = []
+            for kb in kbs:
+                tags = [tag.name for tag in kb.tags]
+                domains = [domain.name for domain in kb.domains]
+                kb_info.append({
+                    "id": kb.id,
+                    "name": kb.name,
+                    "description": kb.description,
+                    "tags": tags,
+                    "domains": domains
+                })
+
+            # 格式化为易读的文本
+            kb_text = "\n".join([
+                f"- ID: {kb['id']}, 名称：{kb['name']}, 描述：{kb['description']}, 标签：{', '.join(kb['tags'])}, 领域：{', '.join(kb['domains'])}"
+                for kb in kb_info
+            ])
+
+            # 构建提示词
+            from backend.app.core.prompts import KNOWLEDGE_BASE_MATCHING_PROMPT
+            prompt = KNOWLEDGE_BASE_MATCHING_PROMPT.format(query=query, kb_text=kb_text)
+            
+            # 使用大模型生成匹配结果
+            generator = Generator(
+                api_key=chat_model.api_key,
+                base_url=chat_model.base_url
+            )
+            response = await generator.generate(
+                query=prompt,
+                retrieved_chunks=[],
+                model=chat_model.model,
+                temperature=0.1
+            )
+            
+            # 解析大模型的响应
+            kb_ids = []
+            answer = response.answer.strip()
+            # 检查是否返回 NONE
+            if answer == "NONE" or "没有匹配" in answer or "无法匹配" in answer:
+                logger.info("大模型判断没有匹配的知识库")
+                keywords = self._extract_keywords(query)
+                matched_kbs = await self._match_kbs(kbs, keywords)
+                logger.info(f"使用关键词匹配兜底，匹配到的知识库:{matched_kbs}")
+                return matched_kbs
+
+            # 提取 ID（每行一个）
+            for line in answer.split('\n'):
+                line = line.strip()
+                if line and line not in ["NONE", "无", "没有"]:
+                    kb_ids.append(line)
+            
+            # 根据大模型返回的ID列表，构建匹配的知识库列表
+            matched_kbs = []
+            for kb_id in kb_ids:
+                for kb in kbs:
+                    if kb.id == kb_id:
+                        matched_kbs.append(kb)
+                        break
+            
+            # 如果大模型没有返回匹配结果，使用简单的关键词匹配作为兜底
+            if not matched_kbs:
+                keywords = self._extract_keywords(query)
+                matched_kbs = await self._match_kbs(kbs, keywords)
+                logger.info(f"匹配到的知识库:{matched_kbs}")
+            
+            return matched_kbs
+        except Exception as e:
+            # 如果使用大模型失败，使用关键词匹配作为兜底
+            logger.error(f"使用大模型进行意图识别失败: {e}")
+            keywords = self._extract_keywords(query)
+            matched_kbs = await self._match_kbs(kbs, keywords)
+            logger.info(f"使用关键词匹配作为兜底，匹配到的知识库:{matched_kbs}")
+            return matched_kbs
+
+    async def _calculate_match_score(self, kb: KnowledgeBase, keywords: List[str]) -> float:
+        """
+        计算匹配分数
+        
+        Args:
+            kb: 知识库
+            keywords: 关键词列表
+            
+        Returns:
+            float: 匹配分数
+        """
+        score = 0.0
+        
+        # 1. 匹配知识库名称和描述
+        kb_text = f"{kb.name} {kb.description}".lower()
+        for keyword in keywords:
+            if keyword in kb_text:
+                score += 1.0
+        
+        # 2. 匹配标签
+        for tag in kb.tags:
+            tag_text = f"{tag.name}".lower()
+            for keyword in keywords:
+                if keyword in tag_text:
+                    score += 0.8
+        
+        # 3. 匹配领域
+        for domain in kb.domains:
+            domain_text = f"{domain.name} {domain.description}".lower()
+            for keyword in keywords:
+                if keyword in domain_text:
+                    score += 0.6
+        
+        return score

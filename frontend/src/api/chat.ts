@@ -8,6 +8,7 @@ export const chatApi = {
     query: string
     kb_ids?: string[]
     model_id?: string
+    context_round?: number
   }) {
     return request<ChatMessage>({
       url: `/chat`,

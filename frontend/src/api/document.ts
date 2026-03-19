@@ -51,5 +51,30 @@ export const documentApi = {
       url: `/document/${docId}`,
       method: 'delete'
     })
+  },
+
+  // 获取文档权限
+  getDocumentPermissions(docId: string) {
+    return request({
+      url: `/document/${docId}/permissions`,
+      method: 'get'
+    })
+  },
+
+  // 添加文档权限
+  addDocumentPermission(docId: string, roleId: string) {
+    return request({
+      url: `/document/${docId}/permissions`,
+      method: 'post',
+      params: { role_id: roleId }
+    })
+  },
+
+  // 移除文档权限
+  removeDocumentPermission(docId: string, roleId: string) {
+    return request({
+      url: `/document/${docId}/permissions/${roleId}`,
+      method: 'delete'
+    })
   }
 }

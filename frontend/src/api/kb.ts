@@ -3,10 +3,14 @@ import type { KnowledgeBase } from '../types'
 
 export const kbApi = {
   // 获取知识库列表
-  getKnowledgeBases() {
-    return request<KnowledgeBase[]>({
+  getKnowledgeBases(params?: {
+    page?: number
+    page_size?: number
+  }) {
+    return request({
       url: '/kb/knowledge-base',
-      method: 'get'
+      method: 'get',
+      params
     })
   },
 
@@ -18,6 +22,9 @@ export const kbApi = {
     rerank_model_id?: string
     chunk_size?: number
     chunk_overlap?: number
+    chunk_method?: string
+    tag_ids?: string[]
+    domain_ids?: string[]
   }) {
     return request<KnowledgeBase>({
       url: '/kb/knowledge-base',
@@ -42,6 +49,9 @@ export const kbApi = {
     rerank_model_id?: string
     chunk_size?: number
     chunk_overlap?: number
+    chunk_method?: string
+    tag_ids?: string[]
+    domain_ids?: string[]
   }) {
     return request<KnowledgeBase>({
       url: `/kb/knowledge-base/${kbId}`,
@@ -54,6 +64,31 @@ export const kbApi = {
   deleteKnowledgeBase(kbId: string) {
     return request({
       url: `/kb/knowledge-base/${kbId}`,
+      method: 'delete'
+    })
+  },
+
+  // 获取知识库权限
+  getKnowledgeBasePermissions(kbId: string) {
+    return request({
+      url: `/kb/knowledge-base/${kbId}/permissions`,
+      method: 'get'
+    })
+  },
+
+  // 添加知识库权限
+  addKnowledgeBasePermission(kbId: string, roleId: string) {
+    return request({
+      url: `/kb/knowledge-base/${kbId}/permissions`,
+      method: 'post',
+      params: { role_id: roleId }
+    })
+  },
+
+  // 移除知识库权限
+  removeKnowledgeBasePermission(kbId: string, roleId: string) {
+    return request({
+      url: `/kb/knowledge-base/${kbId}/permissions/${roleId}`,
       method: 'delete'
     })
   }

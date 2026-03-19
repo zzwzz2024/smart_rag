@@ -79,11 +79,33 @@ class UserService:
     @staticmethod
     async def update_user_role(db: AsyncSession, user_id: str, role_id: Optional[str]) -> Optional[User]:
         """更新用户角色"""
+        from backend.app.models import Role
+        
         db_user = await UserService.get_user_by_id(db, user_id)
         if not db_user:
             return None
         
+        # 处理空字符串的情况，转换为None
+        if role_id == '':
+            role_id = None
+        
+        # 更新role_id
         db_user.role_id = role_id
+        
+        # 如果提供了role_id，查询角色信息并更新role字段
+        if role_id:
+            role_result = await db.execute(
+                select(Role).where(Role.id == role_id)
+            )
+            role = role_result.scalars().first()
+            if role:
+                # 使用角色的code作为用户的role字段值
+                # 这样支持任意角色类型，不局限于admin和user
+                db_user.role = role.code
+        else:
+            # 如果没有提供role_id，将role字段设置为默认值
+            db_user.role = "user"
+        
         await db.commit()
         await db.refresh(db_user)
         return db_user

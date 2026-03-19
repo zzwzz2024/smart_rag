@@ -8,10 +8,10 @@ from backend.app.database import Base
 from sqlalchemy import Column
 
 knowledge_base_authorization_association = Table(
-    'knowledge_base_authorization_association',
+    'kb_knowledge_base_authorization_association',
     Base.metadata,
     Column('authorization_id', String(36), ForeignKey('api_authorizations.id'), primary_key=True),
-    Column('knowledge_base_id', String(36), ForeignKey('knowledge_bases.id'), primary_key=True)
+    Column('knowledge_base_id', String(36), ForeignKey('kb_knowledge_bases.id'), primary_key=True)
 )
 
 
