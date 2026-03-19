@@ -60,15 +60,8 @@ class RAGPipeline:
         检测用户查询意图
         返回：'knowledge_base'、'database' 或 'graph_database'
         """
-        system_prompt = """你是一个意图检测助手，负责判断用户的查询是需要检索知识库还是查询数据库。
-
-        规则：
-        1. 如果查询涉及项目和采购类信息查询（如项目名称、项目编号、项目负责人、项目状态等）或采购信息（如采购订单、采购物品、采购金额、供应商等），返回 'database'
-        2. 如果查询涉及省份景点、历史典故及发生时间类信息（如景点、历史典故、历史典故发生时间、省会等信息），返回 'graph_database'
-        3. 其他所有查询（如技术文档、产品信息、公司政策等）返回 'knowledge_base'
-
-        只需要返回 'database'、'graph_database' 或 'knowledge_base'，不需要其他任何内容。
-        """
+        from backend.app.core.prompts import INTENT_DETECTION_PROMPT
+        system_prompt = INTENT_DETECTION_PROMPT
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -111,50 +104,8 @@ class RAGPipeline:
         """
         根据用户查询和表结构生成SQL查询语句
         """
-        system_prompt = """你是一个SQL查询生成器，负责根据用户的自然语言查询和表结构生成PostgreSQL SQL查询语句。
-
-        表结构：
-        1. 项目表 (project_info)
-            project_code IS '项目编码：唯一标识符，主键'
-            project_name IS '项目名称'
-            region IS '所属大区'
-            city IS '所属城市'
-            department IS '所属部门'
-            construction_unit IS '建设单位'
-            contract_amount IS '合同金额'
-            payment_terms IS '付款条款'
-            sales_manager IS '销售经理'
-            product_manager IS '产品经理'
-            tech_manager IS '技术负责人'
-            ops_manager IS '运维负责人'
-            planned_start IS '计划开始日期'
-            actual_start IS '实际开始日期'
-            planned_end IS '计划结束日期'
-            actual_end IS '实际结束日期'
-            delay_status IS '延期状态（如：正常、延期）'
-            construction_cycle IS '建设周期'
-
-        2. 采购表 (project_purchases)
-            id IS '主键ID'
-            project_code IS '关联项目编码：外键，关联 project_info 表'
-            project_name IS '项目名称（冗余字段，便于查询展示）'
-            purchase_item IS '采购物品/服务名称'
-            quantity IS '采购数量'
-            unit_price IS '单价'
-            total_amount IS '总金额'
-            supplier IS '供应商名称'
-            purchase_officer IS '采购负责人'
-            warranty_period IS '质保期'
-            purchase_date IS '采购日期'
-            status IS '项目状态'
-
-        要求：
-        1. 分析用户查询，理解其意图
-        2. 根据表结构生成正确的SQL查询语句
-        3. 确保SQL语句语法正确，避免SQL注入
-        4. 只返回SQL语句，不需要其他任何内容
-        5. 如果查询涉及多个表，使用适当的JOIN操作
-        """
+        from backend.app.core.prompts import SQL_GENERATION_PROMPT
+        system_prompt = SQL_GENERATION_PROMPT
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -191,31 +142,8 @@ class RAGPipeline:
         """
         根据用户查询生成Neo4j Cypher查询语句
         """
-        system_prompt = """你是一个Cypher查询生成器，负责根据用户的自然语言查询生成Neo4j Cypher查询语句。
-
-        图数据库结构：
-        1. 节点类型：
-           - Province: 省份节点，包含属性：name（省份名称）、code（简称）
-           - City：省会城市 包含属性: name（省会名称）
-           - ScenicSpot：景点名称  包含属性: name（景点名称）
-           - HistoricalFigure: 事件/典故，包含属性：name（事件/典故）
-           - Event：历史事件，包含属性：name（事件名称）
-           - Year：发生年份，包含属性：years（事件年份）
-
-        2. 关系类型：
-           - CAPITAL: (p1)-[:CAPITAL]->(c1) 表示p1的省会是c1
-           - HAS_SPOT: (c1)-[:HAS_SPOT]->(s1) 表示c1的景点是s1
-           - RELATED_TO: (s1)-[:RELATED_TO]->(h1) 表示s1的历史典故是h1
-           - INVOLVED_IN: (h1)-[:INVOLVED_IN {years: ['1919年', '1949年']}]->(e1) 表示h1历史典故的发生时间是e1
-           
-
-        要求：
-        1. 分析用户查询，理解其意图
-        2. 根据图数据库结构生成正确的Cypher查询语句,注意要使用模糊查询，比如用户输入北京，要能匹配到北京市的省和市，输入长沙会战，需要模糊匹配HistoricalFigure和Event两个字段。
-        3. 只能用我给你的关系和节点字段生成SQL，并确保Cypher语句语法正确
-        4. 只返回Cypher查询语句，不需要其他任何内容
-        5. 如果查询涉及多个节点，使用适当的关系查询
-        """
+        from backend.app.core.prompts import CYPHER_GENERATION_PROMPT
+        system_prompt = CYPHER_GENERATION_PROMPT
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -311,22 +239,8 @@ class RAGPipeline:
         使用大模型进行查询改写和扩写
         返回：(优化后的主查询，扩展查询列表)
         """
-        system_prompt = f"""你是一个专业的查询改写助手，负责将用户的原始查询改写成更适合检索的形式，并生成相关的扩展查询。
-
-        任务要求：
-        1. 分析用户的原始查询，理解其意图
-        2. 生成一个优化后的主查询，使其更清晰、更具体，更适合检索
-        3. 生成3-5个相关的扩展查询，涵盖不同的表述方式、同义词、相关概念等
-        4. 扩展查询应该与原始查询意图相关，但使用不同的词汇和表达方式
-        5. 如果有领域信息，请结合领域知识进行改写和扩展
-        6. 输出格式必须严格按照以下JSON格式：
-        {{
-            "optimized_query": "优化后的主查询",
-            "expanded_queries": ["扩展查询1", "扩展查询2", "扩展查询3", ...]
-        }}
-
-        当前领域：{domain or "通用"}
-        """
+        from backend.app.core.prompts import QUERY_REWRITING_PROMPT
+        system_prompt = QUERY_REWRITING_PROMPT.format(domain=domain if domain else "通用")
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -380,11 +294,14 @@ class RAGPipeline:
                 user=None,
         ):
             """RAG 流程"""
-            logger.info(f"[RAG] Starting - query='{query[:50]}...', kb_ids={kb_ids}")
+            # 处理查询中的相对时间
+            from backend.app.utils.time_tool import replace_relative_time_in_query
+            processed_query = replace_relative_time_in_query(query)
+            logger.info(f"[RAG] Starting - original query='{query[:50]}...', processed query='{processed_query[:50]}...', kb_ids={kb_ids}")
 
             # ── 新增：意图检测 ──
             intent = await self._detect_query_intent(
-                query=query,
+                query=processed_query,
                 model=model,
                 api_key=api_key,
                 base_url=base_url,
@@ -397,7 +314,7 @@ class RAGPipeline:
                 try:
                     # 生成SQL查询
                     sql = await self._generate_sql_query(
-                        query=query,
+                        query=processed_query,
                         model=model,
                         api_key=api_key,
                         base_url=base_url,
@@ -408,27 +325,12 @@ class RAGPipeline:
                     results = await self._execute_sql_query(sql,pm_db)
                     
                     # 将查询结果传递给大模型进行总结
-                    system_prompt = f"""你是一个专业的数据分析助手，负责根据数据库查询结果回答用户的问题。
-                    请基于以下查询结果，用自然、友好的语言回答用户的问题：
-                    查询结果：
-                    {results}
-                    作答规则：
-                     - 仅基于用户提供的【参考信息】整理回答问题；
-                    - 仔细阅读参考信息中的内容，确保能够理解并提取相关信息；
-                    - 【关键】在回答前，先判断参考信息是否包含与问题直接相关的内容：
-                      * 如果问题问的是 A，但参考信息只提到 B（即使 A 和 B 很相似），也属于"无相关内容"；
-                      * 例如：问题问"歌王"，但参考信息只有"歌后"，属于无相关内容；
-                      * 例如：问题问"张三的成绩"，但参考信息只有"李四的成绩"，属于无相关内容；
-                    - 若参考信息中包含与问题直接相关的内容，必须基于这些内容生成回答；
-                    - 若参考信息中无相关内容或只有相似内容，必须回复："根据提供的信息，未检索到相关内容"；
-                    - 禁止编造、推测或使用外部知识（包括基于相似概念的推断）；
-                    - 回答中不要包含任何参考信息的引用，不要显示推理过程，直接给出答案即可；
-                    - 回答需简洁、准确、有条理；
-                    """
+                    from backend.app.core.prompts import DATABASE_ANALYSIS_PROMPT
+                    system_prompt = DATABASE_ANALYSIS_PROMPT.format(results=results)
                     
                     messages = [
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": query}
+                        {"role": "user", "content": processed_query}
                     ]
                     
                     # 获取或创建模型客户端
@@ -463,7 +365,7 @@ class RAGPipeline:
                 try:
                     # 生成Cypher查询
                     cypher = await self._generate_cypher_query(
-                        query=query,
+                        query=processed_query,
                         model=model,
                         api_key=api_key,
                         base_url=base_url,
@@ -474,27 +376,12 @@ class RAGPipeline:
                     results = await self._execute_cypher_query(cypher)
                     
                     # 将查询结果传递给大模型进行总结
-                    system_prompt = f"""你是一个专业的数据分析助手，负责根据图数据库查询结果回答用户的问题。
-                    请基于以下查询结果，用自然、友好的语言回答用户的问题：
-                    查询结果：
-                    {results}
-                    作答规则：
-                     - 仅基于用户提供的【参考信息】整理回答问题；
-                    - 仔细阅读参考信息中的内容，确保能够理解并提取相关信息；
-                    - 【关键】在回答前，先判断参考信息是否包含与问题直接相关的内容：
-                      * 如果问题问的是 A，但参考信息只提到 B（即使 A 和 B 很相似），也属于"无相关内容"；
-                      * 例如：问题问"歌王"，但参考信息只有"歌后"，属于无相关内容；
-                      * 例如：问题问"张三的成绩"，但参考信息只有"李四的成绩"，属于无相关内容；
-                    - 若参考信息中包含与问题直接相关的内容，必须基于这些内容生成回答；
-                    - 若参考信息中无相关内容或只有相似内容，必须回复："根据提供的信息，未检索到相关内容"；
-                    - 禁止编造、推测或使用外部知识（包括基于相似概念的推断）；
-                    - 回答中不要包含任何参考信息的引用，不要显示推理过程，直接给出答案即可；
-                    - 回答需简洁、准确、有条理；
-                    """
+                    from backend.app.core.prompts import GRAPH_DATABASE_ANALYSIS_PROMPT
+                    system_prompt = GRAPH_DATABASE_ANALYSIS_PROMPT.format(results=results)
                     
                     messages = [
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": query}
+                        {"role": "user", "content": processed_query}
                     ]
                     
                     # 获取或创建模型客户端
@@ -525,11 +412,11 @@ class RAGPipeline:
                     pass
 
             # ── Stage 1: 查询改写 ──
-            processed_query = query
+            # 保留之前处理过的查询
             if settings.ENABLE_QUERY_REWRITE:
                 logger.info(f"[RAG] Stage 1: Query Rewriting")
                 processed_query, expanded_queries = await self._rewrite_query_with_llm(
-                    query=query,
+                    query=processed_query,
                     domain=domain,
                     model=model,
                     api_key=api_key,
@@ -642,7 +529,7 @@ class RAGPipeline:
             if not retrieved:
                 logger.warning("[RAG] No chunks retrieved")
                 return await self.generator.generate(
-                    query=query,
+                    query=processed_query,
                     retrieved_chunks=[],
                     conversation_history=conversation_history,
                     model=model,
@@ -682,7 +569,7 @@ class RAGPipeline:
                 # ── Stage 4: 生成 ──
                 logger.info("[RAG] Stage 4: Generation")
                 result = await self.generator.generate(
-                    query=query,
+                    query=processed_query,
                     retrieved_chunks=filtered,
                     conversation_history=conversation_history,
                     model=model,
@@ -756,9 +643,14 @@ class RAGPipeline:
         """流式 RAG"""
         top_k = top_k or settings.RERANK_TOP_K
 
+        # 处理查询中的相对时间
+        from backend.app.utils.time_tool import replace_relative_time_in_query
+        processed_query = replace_relative_time_in_query(query)
+        logger.info(f"[RAG Stream] Starting - original query='{query[:50]}...', processed query='{processed_query[:50]}...', kb_ids={kb_ids}")
+
         # ── 新增：意图检测 ──
         intent = await self._detect_query_intent(
-            query=query,
+            query=processed_query,
             model=model,
             api_key=api_key,
             base_url=None,
@@ -771,7 +663,7 @@ class RAGPipeline:
             try:
                 # 生成SQL查询
                 sql = await self._generate_sql_query(
-                    query=query,
+                    query=processed_query,
                     model=model,
                     api_key=api_key,
                     base_url=None,
@@ -782,17 +674,12 @@ class RAGPipeline:
                 results = await self._execute_sql_query(sql)
                 
                 # 将查询结果传递给大模型进行流式总结
-                system_prompt = f"""你是一个专业的数据分析助手，负责根据数据库查询结果回答用户的问题。
-
-                请基于以下查询结果，用自然、友好的语言回答用户的问题：
-                
-                查询结果：
-                {results}
-                """
+                from backend.app.core.prompts import DATABASE_ANALYSIS_PROMPT
+                system_prompt = DATABASE_ANALYSIS_PROMPT.format(results=results)
                 
                 messages = [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": query}
+                    {"role": "user", "content": processed_query}
                 ]
                 
                 # 获取或创建模型客户端
@@ -819,7 +706,7 @@ class RAGPipeline:
             try:
                 # 生成Cypher查询
                 cypher = await self._generate_cypher_query(
-                    query=query,
+                    query=processed_query,
                     model=model,
                     api_key=api_key,
                     base_url=None,
@@ -830,17 +717,12 @@ class RAGPipeline:
                 results = await self._execute_cypher_query(cypher)
                 
                 # 将查询结果传递给大模型进行流式总结
-                system_prompt = f"""你是一个专业的数据分析助手，负责根据图数据库查询结果回答用户的问题。
-
-                请基于以下查询结果，用自然、友好的语言回答用户的问题：
-                
-                查询结果：
-                {results}
-                """
+                from backend.app.core.prompts import GRAPH_DATABASE_ANALYSIS_PROMPT
+                system_prompt = GRAPH_DATABASE_ANALYSIS_PROMPT.format(results=results)
                 
                 messages = [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": query}
+                    {"role": "user", "content": processed_query}
                 ]
                 
                 # 获取或创建模型客户端
@@ -863,12 +745,12 @@ class RAGPipeline:
                 pass
 
         # ── 查询改写扩写 ──
-        processed_query = query
+        # 保留之前处理过的查询
         if settings.ENABLE_QUERY_REWRITE:
             logger.info(f"[RAG Stream] Query Rewriting - original query='{query[:50]}'")
             # 使用大模型进行查询改写和扩写
             processed_query, expanded_queries = await self._rewrite_query_with_llm(
-                query=query,
+                query=processed_query,
                 domain=domain,
                 model=model,
                 api_key=api_key,

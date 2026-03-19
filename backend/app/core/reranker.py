@@ -236,16 +236,8 @@ class Reranker:
         for i, r in enumerate(results[:15]):  # 最多评估15个
             docs_text += f"\n[文档{i + 1}]: {r.content[:300]}\n"
 
-        prompt = f"""请评估以下文档与用户查询的相关性。
-            对每个文档给出 0-10 的相关性分数（10=完全相关, 0=完全无关）。
-            
-            用户查询: {query}
-            
-            候选文档:
-            {docs_text}
-            
-            请严格按以下 JSON 格式输出（仅输出 JSON，无其他内容）:
-            {{"scores": [score1, score2, ...]}}"""
+        from backend.app.core.prompts import RERANKER_PROMPT
+        prompt = RERANKER_PROMPT.format(query=query, doc=docs_text)
 
         # 使用 chat API（不需要 documents 参数）
         response = await self.client.chat.completions.create(

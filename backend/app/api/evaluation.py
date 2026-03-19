@@ -124,36 +124,8 @@ async def contains_opposite_meaning(answer: str, reference: str, model=None) -> 
         )
         
         # 构建提示
-        prompt = f"""请判断以下两个文本是否包含相反的语义。
-
-文本1: {answer_clean}
-文本2: {reference_clean}
-
-请回答"是"或"否"，并简要说明理由。
-
-示例：
-文本1: 今天天气很好
-文本2: 今天天气不好
-回答：是，文本1说天气很好，文本2说天气不好，语义相反。
-
-文本1: 我喜欢苹果
-文本2: 我不喜欢苹果
-回答：是，文本1表示喜欢，文本2表示不喜欢，语义相反。
-
-文本1: 他很高
-文本2: 他不高
-回答：是，文本1表示高，文本2表示不高，语义相反。
-
-文本1: 今天是晴天
-文本2: 今天阳光明媚
-回答：否，两个文本都表示天气好，语义相同。
-
-文本1: 我吃了早餐
-文本2: 我已经吃过早饭了
-回答：否，两个文本都表示吃过早餐，语义相同。
-
-现在请判断：
-"""
+        from backend.app.core.prompts import SEMANTIC_OPPOSITE_PROMPT
+        prompt = SEMANTIC_OPPOSITE_PROMPT.format(text1=answer_clean, text2=reference_clean)
         
         # 调用大模型
         response = await client.chat.completions.create(
