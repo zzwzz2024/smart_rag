@@ -3,7 +3,10 @@
     <!-- 侧边栏 -->
     <aside class="sidebar" :class="{ 'collapsed': appStore.sidebarCollapsed }">
       <div class="sidebar-header">
-        <h1 class="logo">知知检索</h1>
+        <div class="logo-container">
+          <img src="../images/logo.png" alt="Logo" class="logo-image" />
+          <h1 class="logo-text">知知检索</h1>
+        </div>
         <button class="toggle-btn" @click="appStore.toggleSidebar">
           {{ appStore.sidebarCollapsed ? '展开' : '收起' }}
         </button>
@@ -469,13 +472,33 @@ onUnmounted(() => {
   align-items: center;
 }
 
-.logo {
+.logo-container {
+  display: flex;
+  align-items: center;
+}
+
+.logo-image {
+  width: 32px;
+  height: 32px;
+  margin-right: 10px;
+  border-radius: 4px;
+}
+
+.logo-text {
   font-size: 18px;
   font-weight: bold;
   margin: 0;
 }
 
-.sidebar.collapsed .logo {
+.sidebar.collapsed .logo-container {
+  justify-content: center;
+}
+
+.sidebar.collapsed .logo-image {
+  margin-right: 0;
+}
+
+.sidebar.collapsed .logo-text {
   display: none;
 }
 

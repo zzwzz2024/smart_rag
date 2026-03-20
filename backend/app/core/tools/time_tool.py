@@ -79,4 +79,4 @@ class TimeTool:
                     if now.month <= 2:
                         return time_expr, now.replace(year=now.year - 1, month=now.month + 10)
                     else:
-                        return time_expr, now.replace(month=now.month -
+                        return time_expr, now.replace(month=now.month - 2)
