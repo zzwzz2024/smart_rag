@@ -77,6 +77,13 @@
                 <option value="10">10轮</option>
               </select>
             </div>
+            <div class="select-with-label">
+              <label>智能体模式</label>
+              <label class="switch">
+                <input type="checkbox" v-model="useAgent">
+                <span class="slider round"></span>
+              </label>
+            </div>
             <button
               class="btn btn-primary"
               @click="startNewConversation"
@@ -176,6 +183,7 @@ const modelStore = useModelStore()
 const inputMessage = ref('')
 
 const contextRound = ref<number>(4)
+const useAgent = ref<boolean>(false)
 
 // 对话重命名相关
 const editingConversationId = ref<string | null>(null)
@@ -272,7 +280,11 @@ const sendMessage = async () => {
   try {
     // 发送前清空输入框
     inputMessage.value = ''
-    await chatStore.sendMessage(message, undefined, undefined, parseInt(contextRound.value.toString()))
+    if (useAgent.value) {
+      await chatStore.agentSendMessage(message, undefined, undefined, parseInt(contextRound.value.toString()))
+    } else {
+      await chatStore.sendMessage(message, undefined, undefined, parseInt(contextRound.value.toString()))
+    }
     // 滚动到聊天消息底部
     scrollToBottom()
   } catch (error: any) {
@@ -617,6 +629,60 @@ body.dark-mode .chat-header-top {
   font-size: 12px;
   color: #666;
   font-weight: 500;
+}
+
+/* 开关样式 */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 24px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #4CAF50;
+}
+
+input:checked + .slider:before {
+  transform: translateX(24px);
+}
+
+body.dark-mode .slider {
+  background-color: #555;
+}
+
+body.dark-mode input:checked + .slider {
+  background-color: #3b82f6;
 }
 
 .kb-select,

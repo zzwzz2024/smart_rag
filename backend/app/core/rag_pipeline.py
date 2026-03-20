@@ -73,7 +73,7 @@ class RAGPipeline:
             client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
             
             response = await client.chat.completions.create(
-                model=model or "gpt-3.5-turbo",
+                model=model or "",
                 messages=messages,
                 temperature=0.1,
                 max_tokens=20
@@ -117,7 +117,7 @@ class RAGPipeline:
             client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
             
             response = await client.chat.completions.create(
-                model=model or "gpt-3.5-turbo",
+                model=model or "",
                 messages=messages,
                 temperature=0.1,
                 max_tokens=500
@@ -155,7 +155,7 @@ class RAGPipeline:
             client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
             
             response = await client.chat.completions.create(
-                model=model or "gpt-3.5-turbo",
+                model=model or "",
                 messages=messages,
                 temperature=0.1,
                 max_tokens=500
@@ -206,10 +206,7 @@ class RAGPipeline:
             if not self.neo4j_driver:
                 logger.warning("Neo4j driver not initialized, using mock data")
                 # 返回模拟数据
-                return [
-                    {"province": {"name": "江苏省", "capital": "南京"},
-                     "stories": [{"name": "金陵十二钗", "time": "清代", "description": "《红楼梦》中的经典典故"}]}
-                ]
+                return []
             
             # 执行Cypher查询
             with self.neo4j_driver.session() as session:
@@ -221,10 +218,7 @@ class RAGPipeline:
         except Exception as e:
             logger.error(f"Cypher execution failed: {e}")
             # 失败时返回模拟数据
-            return [
-                {"province": {"name": "江苏省", "capital": "南京"},
-                 "stories": [{"name": "金陵十二钗", "time": "清代", "description": "《红楼梦》中的经典典故"}]}
-            ]
+            return []
 
     async def _rewrite_query_with_llm(
         self,
@@ -252,7 +246,7 @@ class RAGPipeline:
             client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
             
             response = await client.chat.completions.create(
-                model=model or "gpt-3.5-turbo",
+                model=model or "",
                 messages=messages,
                 temperature=0.7,
                 max_tokens=500,
@@ -310,7 +304,7 @@ class RAGPipeline:
             client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
             
             response = await client.chat.completions.create(
-                model=model or "gpt-3.5-turbo",
+                model=model or "",
                 messages=messages,
                 temperature=temperature or 0.7,
                 max_tokens=1000
@@ -362,7 +356,7 @@ class RAGPipeline:
             client = self.generator._get_or_create_client(model_id, model, api_key, base_url)
             
             response = await client.chat.completions.create(
-                model=model or "gpt-3.5-turbo",
+                model=model or "",
                 messages=messages,
                 temperature=temperature or 0.7,
                 max_tokens=1000
@@ -639,29 +633,27 @@ class RAGPipeline:
             else:
                 return await self._generate_non_llm_result(filtered, db)
 
-
     async def run_stream(
-        self,
-        query: str,
-        kb_ids: List[str],
-        conversation_history: List[dict] = None,
-        model: Optional[str] = None,
-        model_id: Optional[str] = None,
-        api_key: Optional[str] = None,
-        temperature: Optional[float] = None,
-        top_k: Optional[int] = None,
-        retrieval_mode: str = "hybrid",
-        domain: str = None,  # 新增领域参数
-        user = None,  # 新增用户参数，用于权限检查
-        db: AsyncSession = None,
+            self,
+            query: str,
+            kb_ids: List[str],
+            conversation_history: List[dict] = None,
+            model: Optional[str] = None,
+            model_id: Optional[str] = None,
+            api_key: Optional[str] = None,
+            temperature: Optional[float] = None,
+            top_k: Optional[int] = None,
+            retrieval_mode: str = "hybrid",
+            domain: str = None,  # 新增领域参数
+            user=None,  # 新增用户参数，用于权限检查
+            db: AsyncSession = None,
+            pm_db=None,
     ):
         """流式 RAG"""
         top_k = top_k or settings.RERANK_TOP_K
 
         # 处理查询中的相对时间
-        from backend.app.utils.time_tool import replace_relative_time_in_query
-        processed_query = replace_relative_time_in_query(query)
-        logger.info(f"[RAG Stream] Starting - original query='{query[:50]}...', processed query='{processed_query[:50]}...', kb_ids={kb_ids}")
+        processed_query = await self._process_relative_time_stream(query, kb_ids)
 
         # ── 新增：意图检测 ──
         intent = await self._detect_query_intent(
@@ -671,93 +663,41 @@ class RAGPipeline:
             base_url=None,
             model_id=model_id
         )
-        
+
         # 如果是数据库查询意图
-        if intent == 'database' and db:
-            logger.info(f"[RAG Stream] Database query intent detected")
+        if intent == 'database' and pm_db:
+            # 尝试处理数据库查询
             try:
-                # 生成SQL查询
-                sql = await self._generate_sql_query(
-                    query=processed_query,
-                    model=model,
-                    api_key=api_key,
-                    base_url=None,
-                    model_id=model_id
-                )
-                
-                # 执行SQL查询
-                results = await self._execute_sql_query(sql)
-                
-                # 将查询结果传递给大模型进行流式总结
-                from backend.app.core.prompts import DATABASE_ANALYSIS_PROMPT
-                system_prompt = DATABASE_ANALYSIS_PROMPT.format(results=results)
-                
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": processed_query}
-                ]
-                
-                # 获取或创建模型客户端
-                client = self.generator._get_or_create_client(model_id, model, api_key, None)
-                
-                # 流式生成
-                async for chunk in client.chat.completions.create(
-                    model=model or "gpt-3.5-turbo",
-                    messages=messages,
-                    temperature=temperature or 0.7,
-                    max_tokens=1000,
-                    stream=True
+                # 检查是否有生成的内容
+                has_content = False
+                async for token in self._handle_database_intent_stream(
+                        processed_query, model, api_key, model_id, temperature, pm_db
                 ):
-                    if chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
-                return
+                    yield token
+                    has_content = True
+                # 如果有内容生成，说明处理成功，直接返回
+                if has_content:
+                    return
             except Exception as e:
-                logger.error(f"Database query failed: {e}")
+                logger.error(f"Database intent handling failed: {e}")
                 # 失败时回退到知识库查询
-                pass
         # 如果是图数据库查询意图
         elif intent == 'graph_database':
-            logger.info(f"[RAG Stream] Graph database query intent detected")
+            # 尝试处理图数据库查询
             try:
-                # 生成Cypher查询
-                cypher = await self._generate_cypher_query(
-                    query=processed_query,
-                    model=model,
-                    api_key=api_key,
-                    base_url=None,
-                    model_id=model_id
-                )
-                
-                # 执行Cypher查询
-                results = await self._execute_cypher_query(cypher)
-                
-                # 将查询结果传递给大模型进行流式总结
-                from backend.app.core.prompts import GRAPH_DATABASE_ANALYSIS_PROMPT
-                system_prompt = GRAPH_DATABASE_ANALYSIS_PROMPT.format(results=results)
-                
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": processed_query}
-                ]
-                
-                # 获取或创建模型客户端
-                client = self.generator._get_or_create_client(model_id, model, api_key, None)
-                
-                # 流式生成
-                async for chunk in client.chat.completions.create(
-                    model=model or "gpt-3.5-turbo",
-                    messages=messages,
-                    temperature=temperature or 0.7,
-                    max_tokens=1000,
-                    stream=True
+                # 检查是否有生成的内容
+                has_content = False
+                async for token in self._handle_graph_database_intent_stream(
+                        processed_query, model, api_key, model_id, temperature
                 ):
-                    if chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
-                return
+                    yield token
+                    has_content = True
+                # 如果有内容生成，说明处理成功，直接返回
+                if has_content:
+                    return
             except Exception as e:
-                logger.error(f"Graph database query failed: {e}")
+                logger.error(f"Graph database intent handling failed: {e}")
                 # 失败时回退到知识库查询
-                pass
 
         # ── 查询改写扩写 ──
         # 保留之前处理过的查询
@@ -775,6 +715,180 @@ class RAGPipeline:
         else:
             logger.info(f"[RAG Stream] Query rewriting disabled")
 
+        # 检索和重排序
+        filtered = await self._retrieve_and_rerank_stream(
+            processed_query, kb_ids, top_k, retrieval_mode, domain, db, user
+        )
+
+        # 流式生成
+        async for token in self.generator.generate_stream(
+                query=query,
+                retrieved_chunks=filtered,
+                conversation_history=conversation_history,
+                model=model,
+                model_id=model_id,
+                api_key=api_key,
+                temperature=temperature,
+        ):
+            yield token
+
+    async def _process_relative_time_stream(self, query: str, kb_ids: List[str]) -> str:
+        """处理查询中的相对时间（流式）"""
+        from backend.app.utils.time_tool import replace_relative_time_in_query
+        processed_query = replace_relative_time_in_query(query)
+        logger.info(f"[RAG Stream] Starting - original query='{query[:50]}...', processed query='{processed_query[:50]}...', kb_ids={kb_ids}")
+        return processed_query
+
+    async def _handle_database_intent_stream(self, processed_query: str, model: str, api_key: str, model_id: str, temperature: float, db):
+        """处理数据库查询意图（流式）"""
+        logger.info(f"[RAG Stream] Database query intent detected")
+        try:
+            # 生成SQL查询
+            sql = await self._generate_sql_query(
+                query=processed_query,
+                model=model,
+                api_key=api_key,
+                base_url=None,
+                model_id=model_id
+            )
+            
+            # 执行SQL查询
+            results = await self._execute_sql_query(sql, db)
+            
+            # 将查询结果传递给大模型进行流式总结
+            from backend.app.core.prompts import DATABASE_ANALYSIS_PROMPT
+            system_prompt = DATABASE_ANALYSIS_PROMPT.format(results=results)
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": processed_query}
+            ]
+            
+            # 获取或创建模型客户端
+            client = self.generator._get_or_create_client(model_id, model, api_key, None)
+            
+            # 流式生成
+            async for chunk in client.chat.completions.create(
+                model=model or "",
+                messages=messages,
+                temperature=temperature or 0.7,
+                max_tokens=1000,
+                stream=True
+            ):
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+            # 成功完成，不需要返回值
+        except Exception as e:
+            logger.error(f"Database query failed: {e}")
+            # 失败时回退到知识库查询
+            # 不返回任何值，让调用者知道生成器已结束
+
+    async def _handle_graph_database_intent_stream(self, processed_query: str, model: str, api_key: str, model_id: str, temperature: float):
+        """处理图数据库查询意图（流式）"""
+        logger.info(f"[RAG Stream] Graph database query intent detected")
+        try:
+            # 生成Cypher查询
+            cypher = await self._generate_cypher_query(
+                query=processed_query,
+                model=model,
+                api_key=api_key,
+                base_url=None,
+                model_id=model_id
+            )
+            
+            # 执行Cypher查询
+            results = await self._execute_cypher_query(cypher)
+            
+            # 将查询结果传递给大模型进行流式总结
+            from backend.app.core.prompts import GRAPH_DATABASE_ANALYSIS_PROMPT
+            system_prompt = GRAPH_DATABASE_ANALYSIS_PROMPT.format(results=results)
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": processed_query}
+            ]
+            
+            # 获取或创建模型客户端
+            client = self.generator._get_or_create_client(model_id, model, api_key, None)
+            
+            # 流式生成
+            async for chunk in client.chat.completions.create(
+                model=model or "",
+                messages=messages,
+                temperature=temperature or 0.7,
+                max_tokens=1000,
+                stream=True
+            ):
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+            # 成功完成，不需要返回值
+        except Exception as e:
+            logger.error(f"Graph database query failed: {e}")
+            # 失败时回退到知识库查询
+            # 不返回任何值，让调用者知道生成器已结束
+
+    async def _check_permissions_stream(self, db, user, retrieved):
+        """检查权限（流式）"""
+        if not db or not user:
+            return retrieved
+
+        logger.info("[RAG Stream] Checking document permissions")
+        from backend.app.models.document import Document, DocumentChunk
+        from backend.app.models.knowledge_base import KnowledgeBase
+        from sqlalchemy import select
+        
+        # 过滤出用户有权限的chunks
+        authorized_chunks = []
+        
+        for chunk in retrieved:
+            try:
+                # 获取chunk对应的文档ID
+                chunk_result = await db.execute(
+                    select(DocumentChunk.doc_id).where(DocumentChunk.id == chunk.chunk_id)
+                )
+                doc_id = chunk_result.scalar_one_or_none()
+                
+                if doc_id:
+                    # 获取文档信息
+                    doc_result = await db.execute(
+                        select(Document).where(Document.id == doc_id, Document.is_deleted == False)
+                    )
+                    doc = doc_result.scalar_one_or_none()
+                    
+                    if doc:
+                        # 获取知识库信息
+                        kb_result = await db.execute(
+                            select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+                        )
+                        kb = kb_result.scalar_one_or_none()
+                        
+                        if kb:
+                            # 检查权限
+                            if kb.owner_id == user.id:
+                                # 用户是知识库所有者，有权限
+                                authorized_chunks.append(chunk)
+                            else:
+                                # 检查用户角色是否有权限
+                                if user.role_id:
+                                    from backend.app.models.document import DocumentRole
+                                    role_result = await db.execute(
+                                        select(DocumentRole).where(
+                                            DocumentRole.doc_id == doc_id,
+                                            DocumentRole.role_id == user.role_id,
+                                            DocumentRole.is_deleted == False
+                                        )
+                                    )
+                                    if role_result.scalar_one_or_none():
+                                        # 用户角色有权限
+                                        authorized_chunks.append(chunk)
+            except Exception as e:
+                logger.error(f"Permission check failed for chunk {chunk.chunk_id}: {e}")
+        
+        logger.info(f"[RAG Stream] After permission check: {len(authorized_chunks)} chunks")
+        return authorized_chunks
+
+    async def _retrieve_and_rerank_stream(self, processed_query: str, kb_ids: List[str], top_k: int, retrieval_mode: str, domain: str, db, user):
+        """检索和重排序（流式）"""
         # 检索
         retrieved = await self.retriever.retrieve(
             query=processed_query, kb_ids=kb_ids,
@@ -782,62 +896,8 @@ class RAGPipeline:
             domain=domain,  # 传递领域参数
         )
 
-        # ── 权限检查 ──
-        if db and user:
-            logger.info("[RAG Stream] Checking document permissions")
-            from backend.app.models.document import Document, DocumentChunk
-            from backend.app.models.knowledge_base import KnowledgeBase
-            from sqlalchemy import select
-            
-            # 过滤出用户有权限的chunks
-            authorized_chunks = []
-            
-            for chunk in retrieved:
-                try:
-                    # 获取chunk对应的文档ID
-                    chunk_result = await db.execute(
-                        select(DocumentChunk.doc_id).where(DocumentChunk.id == chunk.chunk_id)
-                    )
-                    doc_id = chunk_result.scalar_one_or_none()
-                    
-                    if doc_id:
-                        # 获取文档信息
-                        doc_result = await db.execute(
-                            select(Document).where(Document.id == doc_id, Document.is_deleted == False)
-                        )
-                        doc = doc_result.scalar_one_or_none()
-                        
-                        if doc:
-                            # 获取知识库信息
-                            kb_result = await db.execute(
-                                select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
-                            )
-                            kb = kb_result.scalar_one_or_none()
-                            
-                            if kb:
-                                # 检查权限
-                                if kb.owner_id == user.id:
-                                    # 用户是知识库所有者，有权限
-                                    authorized_chunks.append(chunk)
-                                else:
-                                    # 检查用户角色是否有权限
-                                    if user.role_id:
-                                        from backend.app.models.document import DocumentRole
-                                        role_result = await db.execute(
-                                            select(DocumentRole).where(
-                                                DocumentRole.doc_id == doc_id,
-                                                DocumentRole.role_id == user.role_id,
-                                                DocumentRole.is_deleted == False
-                                            )
-                                        )
-                                        if role_result.scalar_one_or_none():
-                                            # 用户角色有权限
-                                            authorized_chunks.append(chunk)
-                except Exception as e:
-                    logger.error(f"Permission check failed for chunk {chunk.chunk_id}: {e}")
-            
-            retrieved = authorized_chunks
-            logger.info(f"[RAG Stream] After permission check: {len(retrieved)} chunks")
+        # 权限检查
+        retrieved = await self._check_permissions_stream(db, user, retrieved)
 
         # 重排序
         filtered = retrieved
@@ -855,18 +915,8 @@ class RAGPipeline:
             # 直接使用检索结果的前top_k个
             filtered = retrieved[:top_k] if retrieved else []
 
-        # 流式生成
-        async for token in self.generator.generate_stream(
-            query=query,
-            retrieved_chunks=filtered,
-            conversation_history=conversation_history,
-            model=model,
-            model_id=model_id,
-            api_key=api_key,
-            temperature=temperature,
-        ):
-            yield token
-    
+        return filtered
+
     async def run_with_agent(
         self,
         query: str,
@@ -907,9 +957,15 @@ class RAGPipeline:
         })
         
         # 初始化智能体
+        from backend.app.core.agents.database_agent import DatabaseAgent
+        from backend.app.core.agents.graph_agent import GraphAgent
+        from backend.app.core.agents.time_agent import TimeAgent
+        
         agents = {
-            'research_agent': ResearchAgent(self)
-            # 可以添加其他智能体
+            'research_agent': ResearchAgent(self),
+            'database_agent': DatabaseAgent(self),
+            'graph_agent': GraphAgent(self),
+            'time_agent': TimeAgent(self)
         }
         
         # 初始化协调器

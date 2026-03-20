@@ -73,5 +73,20 @@ export const chatApi = {
         ...options
       }
     })
+  },
+
+  // 智能体聊天
+  agentChat(data: {
+    conversation_id?: string
+    query: string
+    kb_ids?: string[]
+    model_id?: string
+    context_round?: number
+  }) {
+    return request<ChatMessage>({
+      url: `/chat/agent/chat`,
+      method: 'post',
+      data
+    })
   }
 }

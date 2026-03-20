@@ -242,6 +242,118 @@ export const useChatStore = defineStore('chat', {
         // 只在conversation有messages属性时使用
         this.messages = conversation.messages
       }
+    },
+
+    async agentSendMessage(message: string, knowledgeBaseId?: string, modelId?: string, contextRound?: number) {
+      this.isSending = true
+      this.error = null
+      try {
+        // 构建用户消息
+        const userMessage = {
+          id: Date.now(),
+          conversation_id: this.currentConversation?.id || `temp_${Date.now()}`,
+          role: 'user' as const,
+          content: message,
+          created_at: new Date().toISOString()
+        }
+
+        // 立即添加用户消息到消息列表
+        this.messages.push(userMessage)
+
+        // 发送消息到API
+        const chatResponse = await chatApi.agentChat({
+          conversation_id: this.currentConversation?.id,
+          query: message,
+          kb_ids: knowledgeBaseId ? [knowledgeBaseId] : [],
+          model_id: modelId,
+          context_round: contextRound
+        })
+        if (chatResponse.detail) {
+          this.error = chatResponse.detail; // 设置全局错误状态
+          ElMessage.error(this.error)
+          // 移除已添加的用户消息
+          this.messages = this.messages.filter(m => m.id !== userMessage.id)
+          throw new Error(chatResponse.detail); // 抛出异常供上层捕获
+        }
+
+        // 构建助手消息
+        const assistantMessage = {
+          id: chatResponse.message_id,
+          conversation_id: chatResponse.conversation_id,
+          role: 'assistant' as const,
+          content: chatResponse.answer || chatResponse.content,
+          citations: chatResponse.citations,
+          confidence: chatResponse.confidence,
+          created_at: new Date().toISOString()
+        }
+
+        // 更新消息列表和对话
+        if (this.currentConversation) {
+          // 检查是否是临时对话
+          if (this.currentConversation.id.startsWith('temp_')) {
+            // 替换临时对话为真实对话
+            const tempIndex = this.conversations.findIndex(c => c.id === this.currentConversation?.id)
+            
+            const realConversation: Conversation = {
+              id: chatResponse.conversation_id,
+              title: message.substring(0, 30) + '...',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              pinned: this.currentConversation.pinned || false,
+              messages: [userMessage, assistantMessage]
+            }
+            
+            // 更新或替换对话
+            if (tempIndex > -1) {
+              this.conversations.splice(tempIndex, 1, realConversation)
+            } else {
+              this.conversations.unshift(realConversation)
+            }
+            
+            this.currentConversation = realConversation
+            
+            // 更新用户消息的conversation_id为真实ID
+            const userMsgIndex = this.messages.findIndex(m => m.id === userMessage.id)
+            if (userMsgIndex > -1) {
+              this.messages[userMsgIndex].conversation_id = chatResponse.conversation_id
+            }
+            
+            // 添加助手消息
+            this.messages.push(assistantMessage)
+          } else {
+            // 现有对话，添加助手消息
+            this.messages.push(assistantMessage)
+          }
+        } else {
+          // 创建新对话
+          const newConversation: Conversation = {
+            id: chatResponse.conversation_id,
+            title: message.substring(0, 30) + '...',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            messages: [userMessage, assistantMessage]
+          }
+          this.currentConversation = newConversation
+          this.conversations.push(newConversation)
+          
+          // 更新用户消息的conversation_id为真实ID
+          const userMsgIndex = this.messages.findIndex(m => m.id === userMessage.id)
+          if (userMsgIndex > -1) {
+            this.messages[userMsgIndex].conversation_id = chatResponse.conversation_id
+          }
+          
+          // 添加助手消息
+          this.messages.push(assistantMessage)
+        }
+
+        return assistantMessage
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '发送消息失败'
+        ElMessage.error(this.error)
+        throw error
+      } finally {
+        this.isSending = false
+      }
     }
   }
 })

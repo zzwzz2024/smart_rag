@@ -62,11 +62,63 @@ def initialize_rag_pipeline(model_id, kb_id=None, embedding_model_id=None, reran
     
     return model
 
-async def chat(
+async def _get_conversation_history(
     db: AsyncSession,
-    pm_db: AsyncSession,
-    request: ChatRequest,
-    user_id: str,
+    conversation_id: str,
+    limit: int = 10,
+) -> List[dict]:
+    """获取对话历史"""
+    result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+    )
+    messages = result.scalars().all()
+    messages.reverse()
+
+    return [
+        {"role": m.role, "content": m.content}
+        for m in messages
+    ]
+
+
+async def _get_domain_from_kb(
+    db: AsyncSession,
+    kb_ids: List[str]
+) -> Optional[str]:
+    """从知识库获取领域信息"""
+    if not kb_ids:
+        return None
+    
+    try:
+        from backend.app.models.knowledge_base import KnowledgeBase
+        from backend.app.models.domain import Domain
+        
+        # 获取第一个知识库的详情
+        kb_result = await db.execute(
+            select(KnowledgeBase).options(
+                selectinload(KnowledgeBase.domains)
+            ).where(KnowledgeBase.id == kb_ids[0])
+        )
+        kb = kb_result.scalar_one_or_none()
+        
+        if kb and kb.domains:
+            # 使用第一个领域作为主要领域
+            domain = kb.domains[0].name
+            logger.info(f"知识库 {kb.name} 关联领域: {domain}")
+            return domain
+    except Exception as e:
+        logger.error(f"获取领域信息失败: {e}")
+    
+    return None
+
+
+async def chat(
+        db: AsyncSession,
+        pm_db: AsyncSession,
+        request: ChatRequest,
+        user_id: str,
 ) -> ChatResponse:
     # 获取用户信息
     from backend.app.models.user import User
@@ -122,18 +174,18 @@ async def chat(
     api_key = chat_model.api_key
     base_url = chat_model.base_url
     model_name = chat_model.name
-    
+
     # 如果提供了知识库ID，从数据库获取知识库关联的模型详情
     if request.kb_ids:
         try:
             from backend.app.models.knowledge_base import KnowledgeBase
-            
+
             # 获取第一个知识库的详情
             kb_result = await db.execute(
                 select(KnowledgeBase).where(KnowledgeBase.id == request.kb_ids[0])
             )
             kb = kb_result.scalar_one_or_none()
-            
+
             if kb:
                 # 获取embedding模型详情
                 if kb.embedding_model_id:
@@ -141,15 +193,16 @@ async def chat(
                         select(Model).where(Model.id == kb.embedding_model_id, Model.is_active == True)
                     )
                     embedding_model = embedding_model_result.scalar_one_or_none()
-                
+
                 # 获取rerank模型详情
                 if kb.rerank_model_id:
                     rerank_model_result = await db.execute(
                         select(Model).where(Model.id == kb.rerank_model_id, Model.is_active == True)
                     )
                     rerank_model = rerank_model_result.scalar_one_or_none()
-                
-                logger.info(f"Knowledge base {kb.name} associated with embedding model: {embedding_model.name if embedding_model else 'None'}, rerank model: {rerank_model.name if rerank_model else 'None'}")
+
+                logger.info(
+                    f"Knowledge base {kb.name} associated with embedding model: {embedding_model.name if embedding_model else 'None'}, rerank model: {rerank_model.name if rerank_model else 'None'}")
         except Exception as e:
             logger.error(f"Failed to fetch knowledge base models: {e}")
 
@@ -160,7 +213,7 @@ async def chat(
             base_url=base_url,
             embedding_model=embedding_model,
             rerank_model=rerank_model,
-            db = db
+            db=db
         )
     else:
         # 复用全局已初始化的 rag_pipeline（由 api/chat.py 初始化）
@@ -206,7 +259,7 @@ async def chat(
         },
     )
     db.add(ai_message)
-    
+
     # 创建聊天日志记录
     chat_log = ChatLog(
         user_id=user_id,
@@ -219,7 +272,7 @@ async def chat(
         response_time=result.response_time,
     )
     db.add(chat_log)
-    
+
     await db.commit()
 
     # 构建响应
@@ -244,59 +297,6 @@ async def chat(
         # suggested_questions=result.suggested_questions,
         token_usage=result.token_usage,
     )
-
-
-async def _get_conversation_history(
-    db: AsyncSession,
-    conversation_id: str,
-    limit: int = 10,
-) -> List[dict]:
-    """获取对话历史"""
-    result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.desc())
-        .limit(limit)
-    )
-    messages = result.scalars().all()
-    messages.reverse()
-
-    return [
-        {"role": m.role, "content": m.content}
-        for m in messages
-    ]
-
-
-async def _get_domain_from_kb(
-    db: AsyncSession,
-    kb_ids: List[str]
-) -> Optional[str]:
-    """从知识库获取领域信息"""
-    if not kb_ids:
-        return None
-    
-    try:
-        from backend.app.models.knowledge_base import KnowledgeBase
-        from backend.app.models.domain import Domain
-        
-        # 获取第一个知识库的详情
-        kb_result = await db.execute(
-            select(KnowledgeBase).options(
-                selectinload(KnowledgeBase.domains)
-            ).where(KnowledgeBase.id == kb_ids[0])
-        )
-        kb = kb_result.scalar_one_or_none()
-        
-        if kb and kb.domains:
-            # 使用第一个领域作为主要领域
-            domain = kb.domains[0].name
-            logger.info(f"知识库 {kb.name} 关联领域: {domain}")
-            return domain
-    except Exception as e:
-        logger.error(f"获取领域信息失败: {e}")
-    
-    return None
-
 
 async def chat_stream(
     db: AsyncSession,
@@ -474,7 +474,7 @@ async def agent_chat(
         kb_ids=request.kb_ids,
         context=context,
         model=model_name,
-        temperature=chat_model.temperature if chat_model else 0.7,
+        # temperature=chat_model.temperature if chat_model else 0.7,
         api_key=api_key,
         base_url=base_url
     )
@@ -517,4 +517,6 @@ async def agent_chat(
         answer=answer,
         citations=[],
         confidence=confidence,
+        suggested_questions=[],
+        token_usage={}
     )
