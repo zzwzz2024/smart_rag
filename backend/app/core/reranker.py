@@ -2,15 +2,12 @@
 SmartRAG 重排序器
 支持：Qwen Rerank API / LLM-based Reranking / 多厂商支持
 """
-from typing import List, Optional, Dict, Any
-import httpx
+from typing import List
 from openai import AsyncOpenAI
 from loguru import logger
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.retriever import RetrievalResult
 from backend.app.config import get_settings
-from backend.app.models.model import Model
 from backend.app.core.base_reranker import BaseReranker
 from backend.app.core.rerank_models import QwenReranker, ZhipuReranker, DeepSeekReranker, GPTReranker
 
@@ -64,20 +61,19 @@ class Reranker:
             if not self.provider:
                 self.provider = self._infer_provider(rerank_model.model)
         elif db is not None:
-            result = db.execute(
-                select(Model).where(
-                    Model.type == "rerank",
-                    Model.is_active == True
-                ).limit(1)
-            )
-            rerank_model_from_db = result.scalar_one_or_none()
-
-            if rerank_model_from_db:
-                logger.info(f"从数据库加载 rerank 模型：{rerank_model_from_db.name}")
-                self.rerank_config = rerank_model_from_db
-                # 从模型配置中提取provider信息
-                if not self.provider:
-                    self.provider = self._infer_provider(rerank_model_from_db.model)
+            # 优先从数据库获取默认模型
+            import asyncio
+            from backend.app.utils.model_utils import get_default_model
+            try:
+                rerank_model_from_db = asyncio.run(get_default_model(db, "rerank"))
+                if rerank_model_from_db:
+                    logger.info(f"从数据库加载 rerank 模型：{rerank_model_from_db.name}")
+                    self.rerank_config = rerank_model_from_db
+                    # 从模型配置中提取provider信息
+                    if not self.provider:
+                        self.provider = self._infer_provider(rerank_model_from_db.model)
+            except Exception as e:
+                logger.error(f"从数据库获取默认模型失败：{e}")
 
         # 初始化 OpenAI client 用于 LLM-based rerank
         if self.rerank_config and self.rerank_config.api_key:

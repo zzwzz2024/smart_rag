@@ -19,13 +19,13 @@ class RAGPipeline:
 
     def __init__(self, api_key=None, base_url=None, model_name=None, embedding_model=None, rerank_model=None,
                  db: AsyncSession = None,pm_db: AsyncSession = None, rerank_provider=None):
-        self.retriever = HybridRetriever(embedding_model=embedding_model)
+        self.retriever = HybridRetriever(embedding_model=embedding_model, db=db)
         self.reranker = Reranker(
             rerank_model=rerank_model,
             db = db,
             provider=rerank_provider
         )  # 传递所有参数
-        self.generator = Generator(api_key, base_url, model_name)
+        self.generator = Generator(api_key, base_url, model_name, db=db)
         self.db = db
         self.pm_db = pm_db
         

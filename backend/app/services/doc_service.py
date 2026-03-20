@@ -120,7 +120,7 @@ async def process_document(
         # 创建或获取VectorStore实例
         vector_store_key = f"{doc.kb_id}_{embedding_model_id or 'default'}"
         if vector_store_key not in vector_store_instances:
-            vector_store_instances[vector_store_key] = VectorStore(embedding_model=embedding_model)
+            vector_store_instances[vector_store_key] = VectorStore(embedding_model=embedding_model, db=db)
         
         current_vector_store = vector_store_instances[vector_store_key]
         

@@ -26,9 +26,31 @@ class GenerationResult:
 class Generator:
     """内容生成器"""
 
-    def __init__(self,api_key=None,base_url=None,model_name=None):
+    def __init__(self,api_key=None,base_url=None,model_name=None, db=None):
         self.clients = {}  # 存储不同模型的客户端
         print(f"Generator函数初始化")
+        
+        # 优先从数据库获取默认模型
+        if db:
+            import asyncio
+            from backend.app.utils.model_utils import get_default_model
+            try:
+                default_model = asyncio.run(get_default_model(db, "chat"))
+                if default_model and default_model.api_key:
+                    logger.info(f"使用数据库中的默认 chat 模型：{default_model.name}")
+                    self.default_api_key = default_model.api_key
+                    self.default_base_url = default_model.base_url or settings.DEFAULT_BASE_URL
+                    self.default_model_name = default_model.model
+                    self.default_client = AsyncOpenAI(
+                        api_key=self.default_api_key,
+                        base_url=self.default_base_url,
+                        timeout=120.0
+                    )
+                    print(f"Generator函数初始化完成")
+                    return
+            except Exception as e:
+                logger.error(f"从数据库获取默认模型失败：{e}")
+        
         # 使用默认配置
         self.default_api_key = api_key or settings.DEFAULT_API_KEY
         self.default_base_url = base_url or settings.DEFAULT_BASE_URL

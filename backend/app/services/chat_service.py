@@ -57,7 +57,8 @@ def initialize_rag_pipeline(model_id, kb_id=None, embedding_model_id=None, reran
         api_key=model.api_key,
         base_url=model.base_url,
         embedding_model=embedding_model,
-        rerank_model=rerank_model
+        rerank_model=rerank_model,
+        db=db
     )
     
     return model

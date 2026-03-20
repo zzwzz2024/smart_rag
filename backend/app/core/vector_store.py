@@ -34,7 +34,7 @@ class VectorStore:
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None):
+    def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None, db=None):
         if self._initialized:
             return
         self._initialized = False
@@ -47,7 +47,7 @@ class VectorStore:
             path=settings.CHROMA_PERSIST_DIR,
             settings=ChromaSettings(anonymized_telemetry=False),
         )
-        self.embedder = EmbeddingService(embedding_model=embedding_model)
+        self.embedder = EmbeddingService(embedding_model=embedding_model, db=db)
         logger.info("VectorStore initialized (ChromaDB)")
 
     def _get_collection(self, kb_id: str):
@@ -80,9 +80,27 @@ class VectorStore:
             return
 
         # 检查是否有有效的嵌入向量
-        if not all(embedding for embedding in embeddings):
-            logger.error("Some embeddings are empty")
+        valid_embeddings = []
+        valid_chunk_ids = []
+        valid_contents = []
+        valid_metadatas = []
+        
+        for i, embedding in enumerate(embeddings):
+            if embedding:
+                valid_embeddings.append(embedding)
+                valid_chunk_ids.append(chunk_ids[i])
+                valid_contents.append(contents[i])
+                valid_metadatas.append(metadatas[i])
+        
+        if not valid_embeddings:
+            logger.error("No valid embeddings available")
             return
+        
+        # 使用有效的嵌入向量
+        embeddings = valid_embeddings
+        chunk_ids = valid_chunk_ids
+        contents = valid_contents
+        metadatas = valid_metadatas
 
         # 写入 ChromaDB
         batch_size = 500

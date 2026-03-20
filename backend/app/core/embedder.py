@@ -2,7 +2,6 @@
 SmartRAG Embedding 服务
 支持: OpenAI API / 本地 Sentence-Transformers
 """
-import numpy as np
 from typing import List
 from loguru import logger
 from openai import AsyncOpenAI
@@ -12,66 +11,114 @@ settings = get_settings()
 
 
 class EmbeddingService:
-    """向量化服务 - 单例模式"""
 
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None):
-        if self._initialized:
-            return
-        self._initialized = True
+    def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None, db=None):
+        # 优先从数据库获取默认模型
+        if db:
+            import asyncio
+            from backend.app.utils.model_utils import get_default_model
+            try:
+                default_model = asyncio.run(get_default_model(db, "embedding"))
+                if default_model and default_model.api_key:
+                    logger.info(f"使用数据库中的默认 embedding 模型：{default_model.name}")
+                    self._init_openai_client(default_model.api_key, default_model.base_url, default_model.model)
+                    # 确保至少有一个可用的嵌入模型
+                    if not self.is_local and not hasattr(self, 'client'):
+                        # 尝试使用本地模型作为最后的备用方案
+                        self._init_local_model()
+                    return
+            except Exception as e:
+                logger.error(f"从数据库获取默认模型失败：{e}")
 
         # 检查是否有有效的API密钥
         has_valid_api_key = False
         if embedding_model and embedding_model.api_key:
             has_valid_api_key = True
+            logger.info(f"使用提供的 embedding 模型：{embedding_model.name}，API Key: {embedding_model.api_key[:5]}...")
         elif api_key:
             has_valid_api_key = True
+            logger.info(f"使用提供的 API Key: {api_key[:5]}...")
         elif settings.DEFAULT_API_KEY:
             has_valid_api_key = True
+            logger.info(f"使用默认 API Key: {settings.DEFAULT_API_KEY[:5]}...")
 
         # 如果没有有效的API密钥，使用本地模型
         if settings.USE_LOCAL_EMBEDDING or not has_valid_api_key:
+            logger.info("没有有效的API密钥，尝试使用本地模型")
             self._init_local_model()
         else:
             # 如果提供了embedding_model，使用它的配置
             if embedding_model:
+                logger.info(f"初始化 OpenAI 客户端使用模型：{embedding_model.model}，Base URL: {embedding_model.base_url}")
                 self._init_openai_client(embedding_model.api_key, embedding_model.base_url, embedding_model.model)
             else:
                 # 使用默认配置
+                logger.info(f"初始化 OpenAI 客户端使用默认配置：模型={model_name or settings.DEFAULT_EMBEDDING_MODEL}，Base URL={base_url or settings.DEFAULT_BASE_URL}")
                 self._init_openai_client(api_key or settings.DEFAULT_API_KEY, base_url or settings.DEFAULT_BASE_URL, model_name or settings.DEFAULT_EMBEDDING_MODEL)
+        
+        # 确保至少有一个可用的嵌入模型
+        if not self.is_local and not hasattr(self, 'client'):
+            # 尝试使用本地模型作为最后的备用方案
+            self._init_local_model()
 
     def _init_openai_client(self,api_key=None,base_url=None,model_name=None):
         """初始化 OpenAI Embedding 客户端"""
         # from openai import AsyncOpenAI
-        logger.info(f"_init_openai_client")
-        # 创建自定义的httpx AsyncClient，避免传递proxies参数
-        http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(120.0),
-            follow_redirects=True
-        )
-        # 只传递必要的参数
-        self.client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            http_client=http_client
-        )
-        self.model = model_name
-        self.is_local = False
-        logger.info(f"Embedding service initialized (AsyncOpenAI: {self.model})")
+        logger.info(f"_init_openai_client: api_key={api_key[:5]}..." if api_key else "_init_openai_client: api_key=None")
+        
+        # 检查API密钥是否为空
+        if not api_key:
+            logger.error("API key is required for OpenAI client initialization")
+            self.client = None
+            self.model = None
+            self.is_local = False
+            return
+        
+        # 检查base_url是否为空
+        if not base_url:
+            logger.error("Base URL is required for OpenAI client initialization")
+            self.client = None
+            self.model = None
+            self.is_local = False
+            return
+        
+        # 检查model_name是否为空
+        if not model_name:
+            logger.error("Model name is required for OpenAI client initialization")
+            self.client = None
+            self.model = None
+            self.is_local = False
+            return
+        
+        try:
+            # 创建自定义的httpx AsyncClient，避免传递proxies参数
+            http_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(120.0),
+                follow_redirects=True
+            )
+            # 只传递必要的参数
+            self.client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                http_client=http_client
+            )
+            self.model = model_name
+            self.is_local = False
+            logger.info(f"Embedding service initialized (AsyncOpenAI: {self.model})")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI client: {e}")
+            self.client = None
+            self.model = None
+            self.is_local = False
 
     def _init_local_model(self):
         """初始化本地 Embedding 模型"""
         from sentence_transformers import SentenceTransformer
+        logger.info(f"尝试初始化本地模型：{settings.LOCAL_EMBEDDING_MODEL}")
         try:
             self.local_model = SentenceTransformer(settings.LOCAL_EMBEDDING_MODEL)
             self.is_local = True
+            self.client = None
             logger.info(
                 f"Embedding service initialized (Local: {settings.LOCAL_EMBEDDING_MODEL})"
             )
@@ -97,8 +144,10 @@ class EmbeddingService:
             return await self._embed_openai(texts)
         else:
             logger.error("No valid embedding model available. Please provide an API key or ensure local model is properly configured.")
-            # 返回空向量作为 fallback
-            return [[] for _ in texts]
+            # 生成随机向量作为最后的备用方案
+            import random
+            embedding_dim = settings.EMBEDDING_DIMENSION
+            return [[random.random() for _ in range(embedding_dim)] for _ in texts]
 
     async def embed_query(self, query: str) -> List[float]:
         """查询向量化"""

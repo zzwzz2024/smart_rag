@@ -34,8 +34,8 @@ class RetrievalResult:
 class HybridRetriever:
     """混合检索器"""
 
-    def __init__(self, api_key=None, base_url=None, model_name=None, embedding_model=None):
-        self.vector_store = VectorStore(api_key, base_url, model_name, embedding_model)
+    def __init__(self, api_key=None, base_url=None, model_name=None, embedding_model=None, db=None):
+        self.vector_store = VectorStore(api_key, base_url, model_name, embedding_model, db=db)
         
         # RRF 参数优化
         self.rrf_k = 60  # RRF 平滑参数
@@ -91,20 +91,22 @@ class HybridRetriever:
                 # 检查知识库是否存在
                 try:
                     collection = self.vector_store._get_collection(kb_id)
+                    if collection is None:
+                        logger.error(f"【错误】知识库 {kb_id} 不存在（collection 为 None）")
+                        continue
                     collection_count = collection.count()
                     logger.info(f"【重要】知识库 {kb_id} 中文档总数：{collection_count}")
 
-                    if collection_count == 0:
+                    # 即使collection_count为0，也尝试获取文档，因为可能是嵌入模型的问题
+                    sample_docs = collection.get(limit=3)
+                    if sample_docs and sample_docs["documents"]:
+                        logger.info(f"【示例】知识库 {kb_id} 中的文档示例:")
+                        for i, doc in enumerate(sample_docs["documents"][:2]):
+                            logger.info(f"  文档 {i + 1}: {doc[:100]}...")
+                        # 如果有文档，继续检索
+                    else:
                         logger.warning(f"【警告】知识库 {kb_id} 为空，跳过检索")
                         continue
-
-                    # 获取部分文档示例
-                    if collection_count > 0:
-                        sample_docs = collection.get(limit=3)
-                        if sample_docs and sample_docs["documents"]:
-                            logger.info(f"【示例】知识库 {kb_id} 中的文档示例:")
-                            for i, doc in enumerate(sample_docs["documents"][:2]):
-                                logger.info(f"  文档 {i + 1}: {doc[:100]}...")
 
                 except Exception as e:
                     logger.error(f"获取知识库 {kb_id} 失败：{e}")
