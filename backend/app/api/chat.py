@@ -52,6 +52,16 @@ async def chat_stream(
 ):
     """流式聊天"""
     try:
+        from backend.app.config import get_settings
+        settings = get_settings()
+        
+        # 检查是否启用流式输出
+        if not settings.ENABLE_STREAMING:
+            # 如果未启用流式输出，使用普通聊天接口
+            pm_db = await get_pm_db().__anext__()
+            response = await chat_service.chat(db, pm_db, request, user.id)
+            return Response(data=response)
+        
         async def event_generator():
             async for token in chat_service.chat_stream(db, request, user.id):
                 yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
@@ -228,3 +238,35 @@ async def agent_chat(
         return Response(data=response)
     except Exception as e:
         raise HTTPException(500, f"智能体聊天失败：{str(e)}")
+
+
+@router.post("/agent/chat/stream")
+async def agent_chat_stream(
+    request: ChatRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """智能体流式聊天"""
+    try:
+        from backend.app.config import get_settings
+        settings = get_settings()
+        
+        # 检查是否启用智能体流式输出
+        if not settings.ENABLE_AGENT_STREAMING:
+            # 如果未启用智能体流式输出，使用普通智能体聊天接口
+            response = await chat_service.agent_chat(db, request, user.id)
+            return Response(data=response)
+        
+        async def event_generator():
+            async for token in chat_service.agent_chat_stream(db, request, user.id):
+                yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"智能体流式聊天失败：{str(e)}")

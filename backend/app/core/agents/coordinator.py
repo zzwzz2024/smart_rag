@@ -77,7 +77,9 @@ class AgentCoordinator:
         # 执行任务
         if agent_name in self.agents:
             agent = self.agents[agent_name]
+            logger.info(f"[AgentCoordinator] Running agent: {agent_name}")
             result = await agent.run(task, context)
+            logger.info(f"[AgentCoordinator] Agent {agent_name} completed with result: {result}")
             
             # 检查是否需要重新分配任务（如时间智能体处理后需要传递给数据库智能体）
             if agent_name == 'time_agent' and result.get('processed_query'):
@@ -91,7 +93,9 @@ class AgentCoordinator:
                 
                 if new_agent_name != 'time_agent' and new_agent_name in self.agents:
                     new_agent = self.agents[new_agent_name]
+                    logger.info(f"[AgentCoordinator] Running new agent: {new_agent_name}")
                     new_result = await new_agent.run(result['processed_query'], new_context)
+                    logger.info(f"[AgentCoordinator] New agent {new_agent_name} completed with result: {new_result}")
                     return {
                         'agent': new_agent_name,
                         'result': new_result

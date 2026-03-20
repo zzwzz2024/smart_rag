@@ -354,6 +354,173 @@ export const useChatStore = defineStore('chat', {
       } finally {
         this.isSending = false
       }
+    },
+
+    async agentSendMessageStream(message: string, knowledgeBaseId?: string, modelId?: string, contextRound?: number) {
+      this.isSending = true
+      this.error = null
+      try {
+        // 构建用户消息
+        const userMessage = {
+          id: Date.now(),
+          conversation_id: this.currentConversation?.id || `temp_${Date.now()}`,
+          role: 'user' as const,
+          content: message,
+          created_at: new Date().toISOString()
+        }
+
+        // 立即添加用户消息到消息列表
+        this.messages.push(userMessage)
+
+        // 发送消息到API
+        const response = await chatApi.agentChatStream({
+          conversation_id: this.currentConversation?.id,
+          query: message,
+          kb_ids: knowledgeBaseId ? [knowledgeBaseId] : [],
+          model_id: modelId,
+          context_round: contextRound
+        })
+
+        if (!response.ok) {
+          throw new Error('流式请求失败')
+        }
+
+        // 获取响应流
+        const reader = response.body?.getReader()
+        if (!reader) {
+          throw new Error('无法获取响应流')
+        }
+
+        // 构建临时助手消息
+        const tempAssistantMessageId = Date.now() + 1
+        const tempAssistantMessage = {
+          id: tempAssistantMessageId,
+          conversation_id: userMessage.conversation_id,
+          role: 'assistant' as const,
+          content: '',
+          citations: [],
+          confidence: 0,
+          created_at: new Date().toISOString()
+        }
+
+        // 添加临时助手消息
+        this.messages.push(tempAssistantMessage)
+
+        // 读取流数据
+        let fullContent = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          
+          // 解码数据
+          const chunk = new TextDecoder().decode(value)
+          
+          // 解析Server-Sent Events
+          const lines = chunk.split('\n')
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.substring(6)
+              if (data === '[DONE]') {
+                break
+              }
+              try {
+                const parsed = JSON.parse(data)
+                if (parsed.token) {
+                  fullContent += parsed.token
+                  // 更新临时助手消息
+                  const msgIndex = this.messages.findIndex(m => m.id === tempAssistantMessageId)
+                  if (msgIndex > -1) {
+                    this.messages[msgIndex].content = fullContent
+                  }
+                }
+              } catch (e) {
+                console.error('解析流数据失败:', e)
+              }
+            }
+          }
+        }
+
+        // 模拟获取真实的消息ID和对话ID（实际应该从服务器返回）
+        const realMessageId = Date.now() + 2
+        const realConversationId = this.currentConversation?.id || `conv_${Date.now()}`
+
+        // 构建真实助手消息
+        const assistantMessage = {
+          id: realMessageId,
+          conversation_id: realConversationId,
+          role: 'assistant' as const,
+          content: fullContent,
+          citations: [],
+          confidence: 0.9,
+          created_at: new Date().toISOString()
+        }
+
+        // 替换临时助手消息
+        const tempMsgIndex = this.messages.findIndex(m => m.id === tempAssistantMessageId)
+        if (tempMsgIndex > -1) {
+          this.messages.splice(tempMsgIndex, 1, assistantMessage)
+        }
+
+        // 更新消息列表和对话
+        if (this.currentConversation) {
+          // 检查是否是临时对话
+          if (this.currentConversation.id.startsWith('temp_')) {
+            // 替换临时对话为真实对话
+            const tempIndex = this.conversations.findIndex(c => c.id === this.currentConversation?.id)
+            
+            const realConversation: Conversation = {
+              id: realConversationId,
+              title: message.substring(0, 30) + '...',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              pinned: this.currentConversation.pinned || false,
+              messages: [userMessage, assistantMessage]
+            }
+            
+            // 更新或替换对话
+            if (tempIndex > -1) {
+              this.conversations.splice(tempIndex, 1, realConversation)
+            } else {
+              this.conversations.unshift(realConversation)
+            }
+            
+            this.currentConversation = realConversation
+            
+            // 更新用户消息的conversation_id为真实ID
+            const userMsgIndex = this.messages.findIndex(m => m.id === userMessage.id)
+            if (userMsgIndex > -1) {
+              this.messages[userMsgIndex].conversation_id = realConversationId
+            }
+          } else {
+            // 现有对话，不需要更新对话信息
+          }
+        } else {
+          // 创建新对话
+          const newConversation: Conversation = {
+            id: realConversationId,
+            title: message.substring(0, 30) + '...',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            messages: [userMessage, assistantMessage]
+          }
+          this.currentConversation = newConversation
+          this.conversations.push(newConversation)
+          
+          // 更新用户消息的conversation_id为真实ID
+          const userMsgIndex = this.messages.findIndex(m => m.id === userMessage.id)
+          if (userMsgIndex > -1) {
+            this.messages[userMsgIndex].conversation_id = realConversationId
+          }
+        }
+
+        return assistantMessage
+      } catch (error: any) {
+        this.error = error.response?.data?.message || '发送消息失败'
+        ElMessage.error(this.error)
+        throw error
+      } finally {
+        this.isSending = false
+      }
     }
   }
 })

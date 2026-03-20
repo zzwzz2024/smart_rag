@@ -88,5 +88,23 @@ export const chatApi = {
       method: 'post',
       data
     })
+  },
+
+  // 智能体流式聊天
+  agentChatStream(data: {
+    conversation_id?: string
+    query: string
+    kb_ids?: string[]
+    model_id?: string
+    context_round?: number
+  }) {
+    return fetch(`/api/chat/agent/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify(data)
+    })
   }
 }

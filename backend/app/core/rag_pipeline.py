@@ -3,7 +3,7 @@ SmartRAG 全流程编排器
 Query → Retrieval → Rerank → Generation → Output
 """
 import json
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, AsyncGenerator
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.retriever import HybridRetriever, RetrievalResult
@@ -190,7 +190,8 @@ class RAGPipeline:
             return results
         except Exception as e:
             logger.error(f"SQL execution failed: {e}")
-            raise
+            # 不要重新抛出异常，而是返回空列表
+            return []
 
     async def _execute_cypher_query(
         self,
@@ -974,3 +975,75 @@ class RAGPipeline:
         # 执行任务
         result = await coordinator.coordinate(query, context)
         return result
+
+    async def run_with_agent_stream(
+        self,
+        query: str,
+        kb_ids: List[str],
+        agent_name: str = "research_agent",
+        context: Dict[str, Any] = None,
+        model: Optional[str] = None,
+        model_id: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ) -> AsyncGenerator[str, None]:
+        """使用智能体执行RAG流程（流式输出）
+        
+        Args:
+            query: 用户查询
+            kb_ids: 知识库ID列表
+            agent_name: 智能体名称
+            context: 上下文信息
+            model: 模型名称
+            model_id: 模型ID
+            api_key: API密钥
+            base_url: API基础URL
+            
+        Yields:
+            流式输出的文本片段
+        """
+        from backend.app.core.agents.research_agent import ResearchAgent
+        from backend.app.core.agents.coordinator import AgentCoordinator
+        from backend.app.core.agents.database_agent import DatabaseAgent
+        from backend.app.core.agents.graph_agent import GraphAgent
+        from backend.app.core.agents.time_agent import TimeAgent
+        
+        # 构建上下文
+        context = context or {}
+        context.update({
+            'kb_ids': kb_ids,
+            'model': model,
+            'model_id': model_id,
+            'api_key': api_key,
+            'base_url': base_url
+        })
+        
+        # 初始化智能体
+        agents = {
+            'research_agent': ResearchAgent(self),
+            'database_agent': DatabaseAgent(self),
+            'graph_agent': GraphAgent(self),
+            'time_agent': TimeAgent(self)
+        }
+        
+        # 初始化协调器
+        coordinator = AgentCoordinator(agents)
+        
+        # 执行任务获取结果
+        agent_result = await coordinator.coordinate(query, context)
+        
+        # 流式生成响应
+        if agent_result.get('result', {}).get('success'):
+            answer = agent_result['result'].get('response', '智能体执行失败')
+            
+            # 逐字流式输出
+            for char in answer:
+                yield char
+                import asyncio
+                await asyncio.sleep(0.01)  # 控制输出速度
+        else:
+            error_message = f"智能体执行失败: {agent_result.get('result', {}).get('error', '未知错误')}"
+            for char in error_message:
+                yield char
+                import asyncio
+                await asyncio.sleep(0.01)

@@ -83,6 +83,10 @@ async def _get_conversation_history(
     ]
 
 
+# 导入模型
+from backend.app.models.knowledge_base import KnowledgeBase
+from backend.app.models.domain import Domain
+
 async def _get_domain_from_kb(
     db: AsyncSession,
     kb_ids: List[str]
@@ -92,9 +96,6 @@ async def _get_domain_from_kb(
         return None
     
     try:
-        from backend.app.models.knowledge_base import KnowledgeBase
-        from backend.app.models.domain import Domain
-        
         # 获取第一个知识库的详情
         kb_result = await db.execute(
             select(KnowledgeBase).options(
@@ -520,3 +521,52 @@ async def agent_chat(
         suggested_questions=[],
         token_usage={}
     )
+
+
+async def agent_chat_stream(
+    db: AsyncSession,
+    request: ChatRequest,
+    user_id: str,
+):
+    """处理智能体流式聊天请求"""
+    # 获取用户信息
+    from backend.app.models.user import User
+    user_result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = user_result.scalar_one_or_none()
+    
+    # 自动获取默认的聊天模型
+    result = await db.execute(
+        select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
+    )
+    chat_model = result.scalar_one_or_none()
+    
+    if not chat_model:
+        raise ValueError("请先前往模型管理设置默认聊天模型")
+    
+    # 获取或创建RAG pipeline
+    pipeline = get_rag_pipeline(
+        api_key=chat_model.api_key,
+        base_url=chat_model.base_url
+    )
+
+    # 获取领域信息
+    domain = await _get_domain_from_kb(db, request.kb_ids)
+
+    # 构建上下文
+    context = {
+        'domain': domain,
+        'user': user
+    }
+
+    # 执行智能体流式聊天
+    async for token in pipeline.run_with_agent_stream(
+        query=request.query,
+        kb_ids=request.kb_ids,
+        context=context,
+        model=chat_model.name,
+        api_key=chat_model.api_key,
+        base_url=chat_model.base_url
+    ):
+        yield token

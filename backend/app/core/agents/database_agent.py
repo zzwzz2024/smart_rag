@@ -99,18 +99,23 @@ class DatabaseAgent(BaseAgent):
                 # 执行数据库查询
                 if 'sql_query' in results:
                     try:
+                        logger.info(f"[DatabaseAgent] Executing SQL query: {results['sql_query']}")
                         # 这里需要获取数据库会话
                         # 注意：实际实现中需要从上下文或其他方式获取数据库连接
                         # 暂时使用RAG pipeline的数据库连接逻辑
                         from backend.app.database import pm_async_session_factory
                         
                         # 创建数据库会话
+                        logger.info("[DatabaseAgent] Creating database session")
                         async with pm_async_session_factory() as pm_db:
+                            logger.info("[DatabaseAgent] Database session created")
                             if hasattr(self.rag_pipeline, '_execute_sql_query'):
+                                logger.info("[DatabaseAgent] Executing SQL via RAG pipeline")
                                 query_result = await self.rag_pipeline._execute_sql_query(
                                     results['sql_query'],
                                     pm_db
                                 )
+                                logger.info(f"[DatabaseAgent] SQL executed successfully, {len(query_result)} rows returned")
                                 results['query_result'] = query_result
                             else:
                                 results['error'] = '缺少SQL执行能力'
@@ -121,43 +126,47 @@ class DatabaseAgent(BaseAgent):
             elif step['action'] == 'format_response':
                 # 格式化查询结果
                 if 'query_result' in results:
-                    # 使用RAG pipeline的生成器进行总结
-                    if hasattr(self.rag_pipeline, 'generator'):
-                        try:
-                            # 构建上下文
-                            context_str = "\n".join([str(row) for row in results['query_result']])
-                            
-                            # 构建消息
-                            from backend.app.core.prompts import GENERATOR_PROMPT
-                            messages = [
-                                {"role": "system", "content": GENERATOR_PROMPT},
-                                {"role": "user", "content": f"【参考信息】\n{context_str}\n\n【问题】\n{step['params']['query']}\n\n请根据参考信息回答问题，保持语言自然流畅，不要使用###标记，直接按点换行输出。"}
-                            ]
-                            
-                            # 获取模型客户端
-                            client = self.rag_pipeline.generator._get_or_create_client(
-                                context.get('model_id'),
-                                context.get('model'),
-                                context.get('api_key'),
-                                context.get('base_url')
-                            )
-                            
-                            # 生成总结
-                            response = await client.chat.completions.create(
-                                model=context.get('model') or "",
-                                messages=messages,
-                                temperature=0.7,
-                                max_tokens=1000
-                            )
-                            
-                            results['final_response'] = response.choices[0].message.content
-                        except Exception as e:
-                            logger.error(f"LLM summarization failed: {e}")
-                            # 失败时回退到原始格式化方法
-                            results['final_response'] = self._format_query_result(results['query_result'])
+                    # 检查查询结果是否为空
+                    if not results['query_result']:
+                        results['final_response'] = '未查询到数据'
                     else:
-                        # 如果没有生成器，使用原始格式化方法
-                        results['final_response'] = self._format_query_result(results['query_result'])
+                        # 使用RAG pipeline的生成器进行总结
+                        if hasattr(self.rag_pipeline, 'generator'):
+                            try:
+                                # 构建上下文
+                                context_str = "\n".join([str(row) for row in results['query_result']])
+                                
+                                # 构建消息
+                                from backend.app.core.prompts import GENERATOR_PROMPT
+                                messages = [
+                                    {"role": "system", "content": GENERATOR_PROMPT},
+                                    {"role": "user", "content": f"【参考信息】\n{context_str}\n\n【问题】\n{step['params']['query']}\n\n请根据参考信息回答问题，保持语言自然流畅，不要使用###标记，直接按点换行输出。"}
+                                ]
+                                
+                                # 获取模型客户端
+                                client = self.rag_pipeline.generator._get_or_create_client(
+                                    context.get('model_id'),
+                                    context.get('model'),
+                                    context.get('api_key'),
+                                    context.get('base_url')
+                                )
+                                
+                                # 生成总结
+                                response = await client.chat.completions.create(
+                                    model=context.get('model') or "",
+                                    messages=messages,
+                                    temperature=0.7,
+                                    max_tokens=1000
+                                )
+                                
+                                results['final_response'] = response.choices[0].message.content
+                            except Exception as e:
+                                logger.error(f"LLM summarization failed: {e}")
+                                # 失败时回退到原始格式化方法
+                                results['final_response'] = self._format_query_result(results['query_result'])
+                        else:
+                            # 如果没有生成器，使用原始格式化方法
+                            results['final_response'] = self._format_query_result(results['query_result'])
                 else:
                     results['final_response'] = '数据库查询失败'
         
@@ -220,4 +229,5 @@ class DatabaseAgent(BaseAgent):
                 'suggestions': ['检查数据库连接', '确认查询参数是否正确']
             }
         
+        logger.info(f"[DatabaseAgent] Reflection result: {reflection}")
         return reflection

@@ -281,7 +281,7 @@ const sendMessage = async () => {
     // 发送前清空输入框
     inputMessage.value = ''
     if (useAgent.value) {
-      await chatStore.agentSendMessage(message, undefined, undefined, parseInt(contextRound.value.toString()))
+      await chatStore.agentSendMessageStream(message, undefined, undefined, parseInt(contextRound.value.toString()))
     } else {
       await chatStore.sendMessage(message, undefined, undefined, parseInt(contextRound.value.toString()))
     }

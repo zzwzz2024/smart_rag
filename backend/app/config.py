@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     DEFAULT_ERROR_MESSAGE: str = "请求失败，请稍后重试"
     DEFAULT_PAGE_SIZE: int = 20
     MAX_PAGE_SIZE: int = 100
+    
+    # ---- 流式输出配置 ----
+    ENABLE_STREAMING: bool = True  # 是否启用流式输出
+    ENABLE_AGENT_STREAMING: bool = True  # 是否启用智能体模式的流式输出
 
     class Config:
         env_file = ".env"
