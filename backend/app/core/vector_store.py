@@ -74,6 +74,16 @@ class VectorStore:
         # 批量 Embedding
         embeddings = await self.embedder.embed_texts(contents)
 
+        # 检查嵌入是否成功
+        if not embeddings or len(embeddings) != len(contents):
+            logger.error(f"Embedding failed: {len(embeddings)} embeddings for {len(contents)} texts")
+            return
+
+        # 检查是否有有效的嵌入向量
+        if not all(embedding for embedding in embeddings):
+            logger.error("Some embeddings are empty")
+            return
+
         # 写入 ChromaDB
         batch_size = 500
         for i in range(0, len(contents), batch_size):
@@ -165,3 +175,27 @@ class VectorStore:
             "count": collection.count(),
             "name": collection.name,
         }
+
+    def update_embedding(self, kb_id: str, doc_id: str, chunk_id: str, embedding: List[float], content: str):
+        """更新单个分块的向量"""
+        collection = self._get_collection(kb_id)
+        try:
+            # ChromaDB 的 update 方法需要指定 ids 和要更新的字段
+            collection.update(
+                ids=[chunk_id],
+                embeddings=[embedding],
+                documents=[content],
+                metadatas=[{"doc_id": doc_id}]
+            )
+            logger.info(f"Updated embedding for chunk {chunk_id}")
+        except Exception as e:
+            logger.error(f"Failed to update embedding: {e}")
+
+    def delete_by_chunk(self, kb_id: str, doc_id: str, chunk_id: str):
+        """删除单个分块的向量"""
+        collection = self._get_collection(kb_id)
+        try:
+            collection.delete(ids=[chunk_id])
+            logger.info(f"Deleted embedding for chunk {chunk_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete embedding: {e}")

@@ -80,6 +80,7 @@ class EmbeddingService:
             # 初始化失败时，设置为未初始化状态
             self.is_local = False
             self.client = None
+            self.local_model = None
             logger.warning("No valid embedding model available. Please provide an API key or ensure local model is properly configured.")
 
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:

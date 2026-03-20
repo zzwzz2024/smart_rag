@@ -506,3 +506,258 @@ async def remove_document_permission(
     
     await db.commit()
     return Response(data={"message": "权限移除成功"})
+
+
+from pydantic import BaseModel
+
+class UpdateChunkRequest(BaseModel):
+    content: str
+
+@router.put("/chunks/{chunk_id}", response_model=Response)
+async def update_document_chunk(
+    chunk_id: str,
+    request: UpdateChunkRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """更新文档分块内容"""
+    # 验证分块存在
+    chunk_result = await db.execute(
+        select(DocumentChunk).where(DocumentChunk.id == chunk_id, DocumentChunk.is_deleted == False)
+    )
+    chunk = chunk_result.scalar_one_or_none()
+    
+    if not chunk:
+        raise HTTPException(404, "文档分块不存在")
+    
+    # 检查权限
+    doc_result = await db.execute(
+        select(Document).where(Document.id == chunk.doc_id, Document.is_deleted == False)
+    )
+    doc = doc_result.scalar_one_or_none()
+    
+    if not doc:
+        raise HTTPException(404, "文档不存在")
+    
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    
+    if not kb:
+        raise HTTPException(404, "知识库不存在")
+    
+    if kb.owner_id != user.id:
+        raise HTTPException(403, "只有知识库所有者可以修改文档分块")
+    
+    # 更新分块内容
+    chunk.content = request.content
+    chunk.updated_at = datetime.utcnow()
+    
+    # 重新向量化该分块
+    from backend.app.core.embedder import EmbeddingService
+    from backend.app.core.vector_store import VectorStore
+    
+    try:
+        # 初始化嵌入器
+        embedder = EmbeddingService()
+        vector_store = VectorStore()
+        
+        # 生成新的嵌入
+        embedding = await embedder.embed_query(request.content)
+        
+        if embedding:
+            # 更新向量存储
+            vector_store.update_embedding(
+                kb_id=kb.id,
+                doc_id=doc.id,
+                chunk_id=chunk.id,
+                embedding=embedding,
+                content=request.content
+            )
+    except Exception as e:
+        logger.error(f"更新分块向量失败: {e}")
+    
+    await db.commit()
+    return Response(data={"message": "文档分块更新成功"})
+
+
+@router.delete("/chunks/{chunk_id}", response_model=Response)
+async def delete_document_chunk(
+    chunk_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """删除文档分块"""
+    # 验证分块存在
+    chunk_result = await db.execute(
+        select(DocumentChunk).where(DocumentChunk.id == chunk_id, DocumentChunk.is_deleted == False)
+    )
+    chunk = chunk_result.scalar_one_or_none()
+    
+    if not chunk:
+        raise HTTPException(404, "文档分块不存在")
+    
+    # 检查权限
+    doc_result = await db.execute(
+        select(Document).where(Document.id == chunk.doc_id, Document.is_deleted == False)
+    )
+    doc = doc_result.scalar_one_or_none()
+    
+    if not doc:
+        raise HTTPException(404, "文档不存在")
+    
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    
+    if not kb:
+        raise HTTPException(404, "知识库不存在")
+    
+    if kb.owner_id != user.id:
+        raise HTTPException(403, "只有知识库所有者可以删除文档分块")
+    
+    # 从向量存储中删除
+    vector_store.delete_by_chunk(kb.id, doc.id, chunk_id)
+    
+    # 伪删除分块
+    chunk.is_deleted = True
+    
+    # 更新文档的分块计数
+    doc_result = await db.execute(
+        select(DocumentChunk).where(DocumentChunk.doc_id == doc.id, DocumentChunk.is_deleted == False)
+    )
+    remaining_chunks = doc_result.scalars().all()
+    doc.chunk_count = len(remaining_chunks)
+    
+    # 更新知识库的分块计数
+    kb_result = await db.execute(
+        select(Document).where(Document.kb_id == kb.id, Document.is_deleted == False)
+    )
+    all_docs = kb_result.scalars().all()
+    kb.chunk_count = sum(d.chunk_count for d in all_docs)
+    
+    await db.commit()
+    return Response(data={"message": "文档分块删除成功"})
+
+
+class BatchCleanRequest(BaseModel):
+    doc_id: str
+    patterns: list[str] = None
+    remove_empty: bool = False
+    remove_duplicates: bool = False
+
+@router.post("/chunks/batch-clean", response_model=Response)
+async def batch_clean_document_chunks(
+    request: BatchCleanRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """批量清洗文档分块"""
+    # 验证文档存在
+    doc_result = await db.execute(
+        select(Document).where(Document.id == request.doc_id, Document.is_deleted == False)
+    )
+    doc = doc_result.scalar_one_or_none()
+    
+    if not doc:
+        raise HTTPException(404, "文档不存在")
+    
+    # 检查权限
+    kb_result = await db.execute(
+        select(KnowledgeBase).where(KnowledgeBase.id == doc.kb_id, KnowledgeBase.is_deleted == False)
+    )
+    kb = kb_result.scalar_one_or_none()
+    
+    if not kb:
+        raise HTTPException(404, "知识库不存在")
+    
+    if kb.owner_id != user.id:
+        raise HTTPException(403, "只有知识库所有者可以批量清洗文档分块")
+    
+    # 获取所有未删除的分块
+    chunks_result = await db.execute(
+        select(DocumentChunk).where(DocumentChunk.doc_id == request.doc_id, DocumentChunk.is_deleted == False)
+    )
+    chunks = chunks_result.scalars().all()
+    
+    cleaned_count = 0
+    
+    # 收集所有分块内容用于去重检查
+    chunk_contents = []
+    duplicate_chunks = set()
+    
+    # 第一次遍历：标记重复分块
+    if request.remove_duplicates:
+        for chunk in chunks:
+            content = chunk.content.strip()
+            if content in chunk_contents:
+                duplicate_chunks.add(chunk.id)
+            else:
+                chunk_contents.append(content)
+    
+    for chunk in chunks:
+        original_content = chunk.content
+        updated_content = original_content
+        
+        # 移除空分块
+        if request.remove_empty and not updated_content.strip():
+            chunk.is_deleted = True
+            cleaned_count += 1
+            continue
+        
+        # 移除重复分块
+        if request.remove_duplicates and chunk.id in duplicate_chunks:
+            chunk.is_deleted = True
+            cleaned_count += 1
+            continue
+        
+        # 移除匹配指定模式的内容
+        if request.patterns:
+            import re
+            for pattern in request.patterns:
+                updated_content = re.sub(pattern, '', updated_content)
+        
+        # 如果内容有变化，更新分块
+        if updated_content != original_content:
+            chunk.content = updated_content
+            chunk.updated_at = datetime.utcnow()
+            cleaned_count += 1
+            
+            # 重新向量化
+            try:
+                from backend.app.core.embedder import EmbeddingService
+                from backend.app.core.vector_store import VectorStore
+                
+                embedder = EmbeddingService()
+                vector_store = VectorStore()
+                
+                embedding = await embedder.embed_query(updated_content)
+                if embedding:
+                    vector_store.update_embedding(
+                        kb_id=kb.id,
+                        doc_id=doc.id,
+                        chunk_id=chunk.id,
+                        embedding=embedding,
+                        content=updated_content
+                    )
+            except Exception as e:
+                logger.error(f"更新分块向量失败: {e}")
+    
+    # 更新文档的分块计数
+    remaining_result = await db.execute(
+        select(DocumentChunk).where(DocumentChunk.doc_id == doc.id, DocumentChunk.is_deleted == False)
+    )
+    remaining_chunks = remaining_result.scalars().all()
+    doc.chunk_count = len(remaining_chunks)
+    
+    # 更新知识库的分块计数
+    all_docs_result = await db.execute(
+        select(Document).where(Document.kb_id == kb.id, Document.is_deleted == False)
+    )
+    all_docs = all_docs_result.scalars().all()
+    kb.chunk_count = sum(d.chunk_count for d in all_docs)
+    
+    await db.commit()
+    return Response(data={"message": f"批量清洗完成，处理了 {cleaned_count} 个分块"})

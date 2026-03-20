@@ -390,7 +390,6 @@ const loadData = async () => {
   try {
     await Promise.all([
       chatStore.getConversations(),
-      kbStore.getKnowledgeBases(),
       modelStore.getChatModels()
     ])
     

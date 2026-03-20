@@ -76,8 +76,43 @@
               <div class="chunk-header">
                 <span class="chunk-index">段落 {{ chunk.index }}</span>
                 <span v-if="chunk.score" class="chunk-score">相关性: {{ (chunk.score * 100).toFixed(2) }}%</span>
+                <div class="chunk-actions">
+                  <button 
+                    v-if="!chunk.isEditing" 
+                    class="btn btn-sm btn-primary" 
+                    @click="startEditing(chunk)"
+                  >
+                    编辑
+                  </button>
+                  <button 
+                    v-if="chunk.isEditing" 
+                    class="btn btn-sm btn-success" 
+                    @click="saveChunk(chunk)"
+                  >
+                    保存
+                  </button>
+                  <button 
+                    v-if="chunk.isEditing" 
+                    class="btn btn-sm btn-secondary" 
+                    @click="cancelEditing(chunk)"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    class="btn btn-sm btn-danger" 
+                    @click="confirmDeleteChunk(chunk.id)"
+                  >
+                    删除
+                  </button>
+                </div>
               </div>
-              <div class="chunk-content">{{ chunk.content }}</div>
+              <div v-if="!chunk.isEditing" class="chunk-content">{{ chunk.content }}</div>
+              <textarea 
+                v-else 
+                v-model="chunk.editedContent" 
+                class="chunk-content-edit" 
+                rows="5"
+              ></textarea>
             </div>
           </div>
           <div v-else class="empty-state">
@@ -96,8 +131,67 @@
             />
           </div>
           <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showDocumentModal = false">
+            <button type="button" class="btn btn-info" @click="showBatchCleanModal = true">
+              批量清洗
+            </button>
+            <button type="button" class="btn btn-secondary" @click="closeDocumentModal">
               关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 批量清洗模态框 -->
+    <div v-if="showBatchCleanModal" class="modal-overlay" @click="showBatchCleanModal = false">
+      <div class="modal-content batch-clean-modal" @click.stop>
+        <div class="modal-header">
+          <h3>批量清洗文档分块</h3>
+          <button class="close-btn" @click="showBatchCleanModal = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="cleaning-options">
+            <div class="form-group">
+              <label>
+                <input type="checkbox" v-model="batchCleanOptions.removeEmpty">
+                移除空分块
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" v-model="batchCleanOptions.removeDuplicates">
+                移除重复分块
+              </label>
+            </div>
+            <div class="form-group">
+              <label>自定义清理规则（正则表达式）</label>
+              <div v-for="(_, index) in batchCleanOptions.patterns" :key="index" class="pattern-item">
+                <input 
+                  type="text" 
+                  v-model="batchCleanOptions.patterns[index]" 
+                  class="form-control"
+                  placeholder="输入正则表达式"
+                >
+                <button 
+                  class="btn btn-danger btn-sm" 
+                  @click="removePattern(index)"
+                >
+                  删除
+                </button>
+              </div>
+              <button class="btn btn-secondary btn-sm" @click="addPattern">
+                添加规则
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="showBatchCleanModal = false">
+              取消
+            </button>
+            <button type="button" class="btn btn-primary" @click="executeBatchClean">
+              执行清洗
             </button>
           </div>
         </div>
@@ -324,13 +418,22 @@ const documentChunks = ref<any[]>([])
 const isLoadingDocument = ref(false)
 const isInitializingModels = ref(false)
 
-// 权限管理相关状态
+// 文档权限管理相关
 const showPermissionModal = ref(false)
 const selectedDocumentForPermission = ref<any>(null)
 const documentPermissions = ref<any[]>([])
 const availableRoles = ref<any[]>([])
 const selectedRoleId = ref('')
 const isLoadingPermissions = ref(false)
+
+// 批量清洗相关
+const showBatchCleanModal = ref(false)
+const batchCleanOptions = ref({
+  removeEmpty: false,
+  removeDuplicates: false,
+  patterns: [] as string[]
+})
+const needRefreshDocumentList = ref(false)
 const searchParams = ref({
   filename: '',
   created_from: '',
@@ -410,7 +513,7 @@ const uploadDocument = async () => {
 }
 
 // 确认删除文档
-const confirmDeleteDocument = async (docId: number) => {
+const confirmDeleteDocument = async (docId: string) => {
   ElMessageBox.confirm(
     '确定要删除这个文档吗？删除后将无法恢复。',
     '删除确认',
@@ -438,10 +541,12 @@ const viewDocument = async (doc: any) => {
   try {
     const response = await documentApi.getDocumentChunks(doc.id)
     const chunks = response || []
-    // 为每个分块添加索引属性
+    // 为每个分块添加索引属性和编辑相关属性
     documentChunks.value = chunks.map((chunk: any, index: number) => ({
       ...chunk,
-      index: index + 1
+      index: index + 1,
+      isEditing: false,
+      editedContent: chunk.content
     }))
     // 重置分页
     chunkPagination.value.currentPage = 1
@@ -456,12 +561,127 @@ const viewDocument = async (doc: any) => {
   }
 }
 
+// 开始编辑分块
+const startEditing = (chunk: any) => {
+  chunk.isEditing = true
+  chunk.editedContent = chunk.content
+}
+
+// 保存分块修改
+const saveChunk = async (chunk: any) => {
+  try {
+    await documentApi.updateDocumentChunk(chunk.id, chunk.editedContent)
+    chunk.content = chunk.editedContent
+    chunk.isEditing = false
+    ElMessage.success('分块更新成功')
+  } catch (error: any) {
+    const errorMessage = error.response?.data?.detail || '更新分块失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 取消编辑
+const cancelEditing = (chunk: any) => {
+  chunk.isEditing = false
+  chunk.editedContent = chunk.content
+}
+
+// 确认删除分块
+const confirmDeleteChunk = (chunkId: string) => {
+  ElMessageBox.confirm(
+    '确定要删除这个文档分块吗？删除后将无法恢复。',
+    '删除确认',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  )
+    .then(async () => {
+      try {
+        await documentApi.deleteDocumentChunk(chunkId)
+        // 从列表中移除删除的分块
+        documentChunks.value = documentChunks.value.filter(chunk => chunk.id !== chunkId)
+        // 重新计算分页
+        calculatePaginatedChunks()
+        ElMessage.success('分块删除成功')
+        // 标记需要刷新文档列表
+        needRefreshDocumentList.value = true
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.detail || '删除分块失败'
+        ElMessage.error(errorMessage)
+      }
+    })
+    .catch(() => {
+      // 用户取消删除
+    })
+}
+
+// 添加清洗规则
+const addPattern = () => {
+  batchCleanOptions.value.patterns.push('')
+}
+
+// 移除清洗规则
+const removePattern = (index: number) => {
+  batchCleanOptions.value.patterns.splice(index, 1)
+}
+
+// 执行批量清洗
+const executeBatchClean = async () => {
+  if (!selectedDocument.value) return
+  
+  try {
+    // 过滤空的正则表达式
+    const patterns = batchCleanOptions.value.patterns.filter(pattern => pattern.trim())
+    
+    // 检查是否有任何清洗选项被选中
+    const hasCleaningOptions = batchCleanOptions.value.removeEmpty || 
+                             batchCleanOptions.value.removeDuplicates || 
+                             patterns.length > 0
+    
+    if (!hasCleaningOptions) {
+      ElMessage.warning('请至少选择一个清洗选项')
+      return
+    }
+    
+    const response = await documentApi.batchCleanDocumentChunks(selectedDocument.value.id, {
+      remove_empty: batchCleanOptions.value.removeEmpty,
+      remove_duplicates: batchCleanOptions.value.removeDuplicates,
+      patterns
+    })
+    
+    // 显示成功消息，包含处理的分块数量
+    const message = response?.message || '批量清洗完成'
+    ElMessage.success(message)
+    showBatchCleanModal.value = false
+    
+    // 重新加载文档内容
+    await viewDocument(selectedDocument.value)
+    // 标记需要刷新文档列表
+    needRefreshDocumentList.value = true
+  } catch (error: any) {
+    const errorMessage = error.response?.data?.detail || '批量清洗失败'
+    ElMessage.error(errorMessage)
+  }
+}
+
+// 关闭文档内容模态框
+const closeDocumentModal = () => {
+  showDocumentModal.value = false
+  // 如果需要刷新文档列表，则刷新
+  if (needRefreshDocumentList.value) {
+    searchDocuments()
+    needRefreshDocumentList.value = false
+  }
+}
+
 // 查询文档
 const searchDocuments = async () => {
   if (!selectedKnowledgeBase.value) return
   
   try {
-    const res = await kbStore.getDocuments(selectedKnowledgeBase.value, searchParams.value);
+    await kbStore.getDocuments(selectedKnowledgeBase.value, searchParams.value);
   } catch (error: any) {
     // 提取详细错误信息
     const errorMessage = error.response?.data?.detail || '查询文档失败'
@@ -478,13 +698,6 @@ const resetSearch = () => {
     page: 1,
     page_size: 10
   }
-  searchDocuments()
-}
-
-// 切换页码
-const changePage = (page: number) => {
-  if (page < 1 || page > kbStore.documentPagination.totalPages) return
-  searchParams.value.page = page
   searchDocuments()
 }
 
@@ -904,6 +1117,47 @@ watch(
 .chunk-score {
   font-size: 12px;
   color: #999;
+}
+
+.chunk-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.chunk-content-edit {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.chunk-content-edit:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+.batch-clean-modal {
+  max-width: 600px;
+}
+
+.cleaning-options {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pattern-item {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pattern-item input {
+  flex: 1;
 }
 
 .document-modal .chunk-content {

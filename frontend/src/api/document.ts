@@ -76,5 +76,35 @@ export const documentApi = {
       url: `/document/${docId}/permissions/${roleId}`,
       method: 'delete'
     })
+  },
+
+  // 更新文档分块
+  updateDocumentChunk(chunkId: string, content: string) {
+    return request({
+      url: `/document/chunks/${chunkId}`,
+      method: 'put',
+      data: { content }
+    })
+  },
+
+  // 删除文档分块
+  deleteDocumentChunk(chunkId: string) {
+    return request({
+      url: `/document/chunks/${chunkId}`,
+      method: 'delete'
+    })
+  },
+
+  // 批量清洗文档分块
+  batchCleanDocumentChunks(docId: string, params: {
+    patterns?: string[]
+    remove_empty?: boolean
+    remove_duplicates?: boolean
+  }) {
+    return request({
+      url: `/document/chunks/batch-clean`,
+      method: 'post',
+      data: { doc_id: docId, ...params }
+    })
   }
 }
