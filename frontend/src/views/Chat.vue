@@ -113,6 +113,22 @@
               <button class="copy-button" @click="copyMessage(message.content)">
                 复制
               </button>
+              <div v-if="message.role === 'assistant'" class="feedback-buttons">
+                <button 
+                  class="feedback-btn feedback-positive"
+                  @click="submitFeedback(message.id, 1)"
+                  :class="{ 'feedback-given': message.feedback === 1 }"
+                >
+                  👍
+                </button>
+                <button 
+                  class="feedback-btn feedback-negative"
+                  @click="submitFeedback(message.id, 0)"
+                  :class="{ 'feedback-given': message.feedback === 0 }"
+                >
+                  👎
+                </button>
+              </div>
             </div>
             <div v-if="message.role === 'assistant' && message.citations && message.citations.length > 0" class="citations">
               <h4>引用来源:</h4>
@@ -173,6 +189,7 @@ import { useKbStore } from '../stores/kb'
 import { useModelStore } from '../stores/model'
 import { ElMessage } from 'element-plus'
 import { chatApi } from '../api/chat'
+import { agentApi } from '../api/agent'
 import type { Conversation } from '../types'
 
 const route = useRoute()
@@ -361,6 +378,27 @@ const copyMessage = async (content: string) => {
   } catch (error) {
     console.error('复制失败:', error)
     ElMessage.error('复制失败，请手动复制')
+  }
+}
+
+// 提交反馈
+const submitFeedback = async (messageId: string, rating: number) => {
+  try {
+    await agentApi.submitFeedback({
+      message_id: messageId,
+      rating: rating
+    })
+    
+    // 更新消息的反馈状态
+    const message = chatStore.messages.find(m => m.id === messageId)
+    if (message) {
+      message.feedback = rating
+    }
+    
+    ElMessage.success('反馈提交成功')
+  } catch (error: any) {
+    const errorMessage = error.response?.data?.detail || '反馈提交失败'
+    ElMessage.error(errorMessage)
   }
 }
 
@@ -781,6 +819,79 @@ body.dark-mode .copy-button {
 
 body.dark-mode .copy-button:hover {
   background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* 反馈按钮样式 */
+.feedback-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.feedback-btn {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s ease;
+}
+
+.feedback-btn:hover {
+  transform: scale(1.1);
+}
+
+.feedback-positive:hover {
+  background-color: #e8f5e8;
+  border-color: #4CAF50;
+}
+
+.feedback-negative:hover {
+  background-color: #ffebee;
+  border-color: #f44336;
+}
+
+.feedback-given.feedback-positive {
+  background-color: #e8f5e8;
+  border-color: #4CAF50;
+  color: #4CAF50;
+}
+
+.feedback-given.feedback-negative {
+  background-color: #ffebee;
+  border-color: #f44336;
+  color: #f44336;
+}
+
+body.dark-mode .feedback-btn {
+  border-color: #555;
+}
+
+body.dark-mode .feedback-positive:hover {
+  background-color: rgba(76, 175, 80, 0.2);
+  border-color: #4CAF50;
+}
+
+body.dark-mode .feedback-negative:hover {
+  background-color: rgba(244, 67, 54, 0.2);
+  border-color: #f44336;
+}
+
+body.dark-mode .feedback-given.feedback-positive {
+  background-color: rgba(76, 175, 80, 0.2);
+  border-color: #4CAF50;
+  color: #4CAF50;
+}
+
+body.dark-mode .feedback-given.feedback-negative {
+  background-color: rgba(244, 67, 54, 0.2);
+  border-color: #f44336;
+  color: #f44336;
 }
 
 .confidence-badge {

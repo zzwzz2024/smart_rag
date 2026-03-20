@@ -19,7 +19,6 @@ import backend.app.services.chat_service as chat_service
 
 router = APIRouter()
 
-
 from backend.app.models.response_model import Response
 
 @router.post("", response_model=Response)

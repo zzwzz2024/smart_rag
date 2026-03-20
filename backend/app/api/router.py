@@ -2,7 +2,8 @@
 API 路由注册
 """
 from fastapi import APIRouter
-from backend.app.api import auth, knowledge_base, document, chat, evaluation, model, system, tag, domain
+from backend.app.api import (auth, knowledge_base, document, chat, evaluation,
+                             model, system, tag, domain,agent)
 from backend.app.api.api_auth import router as api_auth_router
 
 api_router = APIRouter(prefix="/api")
@@ -17,3 +18,4 @@ api_router.include_router(tag.router, prefix="/tag", tags=["标签管理"])
 api_router.include_router(domain.router, prefix="/domain", tags=["领域管理"])
 api_router.include_router(api_auth_router, prefix="/api-auth", tags=["API授权"])
 api_router.include_router(system.router, tags=["系统设置"])
+api_router.include_router(agent.router,prefix="/agent", tags=["智能体"])
