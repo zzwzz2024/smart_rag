@@ -55,6 +55,7 @@ class Reranker:
     def __init__(self, api_key=None, base_url=None, model_name=None, rerank_model=None, db: AsyncSession = None, provider=None):
         self.rerank_config = None
         self.provider = provider
+        self.api_key = api_key or settings.DEFAULT_API_KEY
 
         # 如果提供了 rerank_model，使用它的配置
         if rerank_model:
@@ -82,27 +83,42 @@ class Reranker:
         if self.rerank_config and self.rerank_config.api_key:
             self.client = AsyncOpenAI(
                 api_key=self.rerank_config.api_key,
-                base_url=self.rerank_config.base_url,
+                base_url=self.rerank_config.base_url or settings.DEFAULT_BASE_URL,
                 timeout=120.0
             )
             self.model_name = self.rerank_config.model
+        elif self.api_key:
+            self.client = AsyncOpenAI(
+                api_key=self.api_key,
+                base_url=base_url or settings.DEFAULT_BASE_URL,
+                timeout=120.0
+            )
+            self.model_name = model_name or settings.DEFAULT_RERANK_MODEL
         else:
             self.client = None
-            self.model_name = None
+            self.model_name = model_name or settings.DEFAULT_RERANK_MODEL
 
         # 初始化厂商特定的reranker
         self.provider_reranker = None
-        if self.rerank_config and self.rerank_config.api_key and self.provider:
-            try:
-                self.provider_reranker = get_reranker_by_provider(
-                    provider=self.provider,
-                    api_key=self.rerank_config.api_key,
-                    model_name=self.rerank_config.model
-                )
-                logger.info(f"初始化 {self.provider} rerank 模型：{self.rerank_config.model}")
-            except Exception as e:
-                logger.error(f"初始化厂商rerank模型失败：{e}")
-                self.provider_reranker = None
+        if (self.rerank_config and self.rerank_config.api_key) or self.api_key:
+            if not self.provider:
+                # 从模型名称推断provider
+                model_to_use = self.rerank_config.model if self.rerank_config else self.model_name
+                self.provider = self._infer_provider(model_to_use)
+            
+            if self.provider:
+                try:
+                    api_key_to_use = self.rerank_config.api_key if self.rerank_config else self.api_key
+                    model_to_use = self.rerank_config.model if self.rerank_config else self.model_name
+                    self.provider_reranker = get_reranker_by_provider(
+                        provider=self.provider,
+                        api_key=api_key_to_use,
+                        model_name=model_to_use
+                    )
+                    logger.info(f"初始化 {self.provider} rerank 模型：{model_to_use}")
+                except Exception as e:
+                    logger.error(f"初始化厂商rerank模型失败：{e}")
+                    self.provider_reranker = None
 
     async def rerank(
             self,

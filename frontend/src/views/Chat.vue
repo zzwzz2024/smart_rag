@@ -102,7 +102,7 @@
             :class="message.role === 'user' ? 'chat-message-user' : 'chat-message-bot'"
           >
             <div class="chat-message-content">
-              {{ message.content }}
+              {{ formatMessageContent(message.content) }}
               <div v-if="message.role === 'assistant' && message.confidence" class="confidence-badge" :class="{
                 'confidence-low': message.confidence < 0.5,
                 'confidence-medium': message.confidence >= 0.5 && message.confidence < 0.75,
@@ -364,9 +364,21 @@ const copyMessage = async (content: string) => {
   }
 }
 
+// 格式化消息内容，确保序号正确换行
+// 格式化消息内容，确保序号正确换行
+const formatMessageContent = (content: string): string => {
+  if (!content) return content
+  let formatted = content
 
+  // 只在编号前不是换行符时才添加换行（排除已经在行首的编号）
+  // 匹配"非换行符 + 可选空白 + 数字." 的模式
+  formatted = formatted.replace(/([^\r\n\d])\s*(\d+\.\s+)/g, '$1\n$2')
 
+  // 处理可能出现的多个连续换行
+  formatted = formatted.replace(/\n{3,}/g, '\n\n')
 
+  return formatted
+}
 
 // 监听消息列表变化，自动滚动到最底部
 watch(() => chatStore.messages.length, () => {
@@ -736,7 +748,9 @@ body.dark-mode .context-select {
   margin-bottom: 8px;
   position: relative;
   padding-right: 60px; /* 为复制按钮留出空间 */
+  white-space: pre-wrap; /* 保留换行符和空格 */
 }
+
 
 .copy-button {
   position: absolute;

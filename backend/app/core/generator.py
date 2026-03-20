@@ -29,11 +29,15 @@ class Generator:
     def __init__(self,api_key=None,base_url=None,model_name=None):
         self.clients = {}  # 存储不同模型的客户端
         print(f"Generator函数初始化")
-        # 只有当api_key和base_url都不为None时，才创建默认客户端
-        if api_key and base_url:
+        # 使用默认配置
+        self.default_api_key = api_key or settings.DEFAULT_API_KEY
+        self.default_base_url = base_url or settings.DEFAULT_BASE_URL
+        self.default_model_name = model_name or settings.DEFAULT_LLM_MODEL
+        # 只有当api_key不为None时，才创建默认客户端
+        if self.default_api_key:
             self.default_client = AsyncOpenAI(
-                api_key=api_key,
-                base_url=base_url,
+                api_key=self.default_api_key,
+                base_url=self.default_base_url,
                 timeout=120.0
             )
         else:
@@ -55,13 +59,13 @@ class Generator:
                 if self.default_client:
                     return self.default_client
                 else:
-                    raise ValueError("API key and base URL are required for model client creation")
+                    raise ValueError("API key is required for model client creation")
             
             # 这里可以根据model_id从数据库获取模型配置
             # 例如，获取模型的base_url等
             self.clients[client_key] = AsyncOpenAI(
-                api_key=api_key,
-                base_url=base_url,
+                api_key=api_key or self.default_api_key,
+                base_url=base_url or self.default_base_url,
             )
             logger.info(f"Created new client for model: {client_key}")
         
@@ -128,7 +132,7 @@ class Generator:
 
             if not model:
                 # 如果没有提供模型，使用默认模型
-                model = "gpt-3.5-turbo"
+                model = self.default_model_name
             temperature = temperature or 0.7
 
             # 构造上下文
@@ -235,6 +239,7 @@ class Generator:
         # 获取向量分数和BM25分数
         vector_scores = [r.vector_score for r in retrieved_chunks if r.vector_score > 0]
         bm25_scores = [r.bm25_score for r in retrieved_chunks if r.bm25_score > 0]
+        rrf_scores = [r.score for r in retrieved_chunks if r.score > 0]
         
         # 计算平均分数
         if vector_scores and bm25_scores:
@@ -246,9 +251,13 @@ class Generator:
             avg_score = sum(vector_scores) / len(vector_scores)
         elif bm25_scores:
             avg_score = sum(bm25_scores) / len(bm25_scores)
-        else:
+        elif rrf_scores:
             # 使用RRF分数作为兜底
-            avg_score = sum(r.score for r in retrieved_chunks) / len(retrieved_chunks)
+            avg_score = sum(rrf_scores) / len(rrf_scores)
+            # 对RRF分数进行缩放，使其更合理
+            avg_score = min(avg_score * 10, 1.0)
+        else:
+            return 0.3
 
         # 计算数量因子
         count_factor = min(len(retrieved_chunks) / 3.0, 1.0)  # 最多3个结果为满分，提高权重
@@ -261,6 +270,10 @@ class Generator:
             confidence = min(confidence * 1.1, 1.0)
         elif avg_score > 0.5:
             confidence = min(confidence * 1.05, 1.0)
+        # 对BM25结果给予额外提升
+        elif bm25_scores and not vector_scores:
+            # 如果只有BM25分数，提高置信度
+            confidence = min(confidence * 1.2, 0.8)  # 最高限制为0.8
 
         return min(confidence, 1.0)
 
@@ -288,7 +301,7 @@ class Generator:
         """
         流式生成答案
         """
-        model = model or settings.LLM_MODEL
+        model = model or self.default_model_name
         temperature = temperature or settings.LLM_TEMPERATURE
 
         # 构造上下文

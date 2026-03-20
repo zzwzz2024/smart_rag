@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 1536
     LLM_TEMPERATURE: float = 0.1
     LLM_MAX_TOKENS: int = 4096
+    DEFAULT_LLM_MODEL: str = "qwen3-max"
+    DEFAULT_EMBEDDING_MODEL: str = "text-embedding-v3"
+    DEFAULT_RERANK_MODEL: str = "gpt-rerank"
+    DEFAULT_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    DEFAULT_API_KEY: str = ""
 
     # ---- 检索 ----
     CHUNK_SIZE: int = 512

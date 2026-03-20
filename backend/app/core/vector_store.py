@@ -111,6 +111,11 @@ class VectorStore:
         query_embedding = await self.embedder.embed_query(query)
         logger.info(f"query_embedding完成")
 
+        # 检查查询向量是否为空
+        if not query_embedding:
+            logger.warning("Empty query embedding, returning empty results")
+            return []
+
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=min(top_k, collection.count()),

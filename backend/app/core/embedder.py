@@ -25,13 +25,15 @@ class EmbeddingService:
     def __init__(self,api_key=None,base_url=None,model_name=None, embedding_model=None):
         if self._initialized:
             return
-        self._initialized = False
+        self._initialized = True
 
         # 检查是否有有效的API密钥
         has_valid_api_key = False
         if embedding_model and embedding_model.api_key:
             has_valid_api_key = True
         elif api_key:
+            has_valid_api_key = True
+        elif settings.DEFAULT_API_KEY:
             has_valid_api_key = True
 
         # 如果没有有效的API密钥，使用本地模型
@@ -42,7 +44,8 @@ class EmbeddingService:
             if embedding_model:
                 self._init_openai_client(embedding_model.api_key, embedding_model.base_url, embedding_model.model)
             else:
-                self._init_openai_client(api_key,base_url,model_name)
+                # 使用默认配置
+                self._init_openai_client(api_key or settings.DEFAULT_API_KEY, base_url or settings.DEFAULT_BASE_URL, model_name or settings.DEFAULT_EMBEDDING_MODEL)
 
     def _init_openai_client(self,api_key=None,base_url=None,model_name=None):
         """初始化 OpenAI Embedding 客户端"""
@@ -66,11 +69,18 @@ class EmbeddingService:
     def _init_local_model(self):
         """初始化本地 Embedding 模型"""
         from sentence_transformers import SentenceTransformer
-        self.local_model = ""#SentenceTransformer(settings.LOCAL_EMBEDDING_MODEL)
-        self.is_local = True
-        logger.info(
-            f"Embedding service initialized (Local: {settings.LOCAL_EMBEDDING_MODEL})"
-        )
+        try:
+            self.local_model = SentenceTransformer(settings.LOCAL_EMBEDDING_MODEL)
+            self.is_local = True
+            logger.info(
+                f"Embedding service initialized (Local: {settings.LOCAL_EMBEDDING_MODEL})"
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize local embedding model: {e}")
+            # 初始化失败时，设置为未初始化状态
+            self.is_local = False
+            self.client = None
+            logger.warning("No valid embedding model available. Please provide an API key or ensure local model is properly configured.")
 
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:
         """批量生成向量"""
@@ -80,10 +90,14 @@ class EmbeddingService:
         # 清洗空文本
         texts = [t if t.strip() else " " for t in texts]
 
-        if self.is_local:
+        if self.is_local and hasattr(self, 'local_model') and self.local_model:
             return self._embed_local(texts)
-        else:
+        elif not self.is_local and hasattr(self, 'client') and self.client:
             return await self._embed_openai(texts)
+        else:
+            logger.error("No valid embedding model available. Please provide an API key or ensure local model is properly configured.")
+            # 返回空向量作为 fallback
+            return [[] for _ in texts]
 
     async def embed_query(self, query: str) -> List[float]:
         """查询向量化"""
