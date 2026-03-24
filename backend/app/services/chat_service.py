@@ -8,16 +8,16 @@ from sqlalchemy.orm import selectinload
 from loguru import logger
 from backend.app.models.conversation import Conversation, Message, ChatLog
 from backend.app.models.model import Model
-from backend.app.core.rag_pipeline import RAGPipeline
+from backend.app.core.langgraph_workflow import LangGraphWorkflow
 from backend.app.schemas.chat import ChatRequest, ChatResponse, Citation
 
 rag_pipeline = None
 
 def get_rag_pipeline(api_key=None, base_url=None):
-    """获取 RAGPipeline 实例，支持惰性初始化"""
+    """获取 LangGraphWorkflow 实例，支持惰性初始化"""
     global rag_pipeline
     if rag_pipeline is None:
-        rag_pipeline = RAGPipeline(api_key=api_key, base_url=base_url)
+        rag_pipeline = LangGraphWorkflow(api_key=api_key, base_url=base_url)
     return rag_pipeline
 
 
@@ -51,9 +51,9 @@ def initialize_rag_pipeline(model_id, kb_id=None, embedding_model_id=None, reran
         )
         rerank_model = rerank_result.scalar_one_or_none()
 
-    # 初始化RAG pipeline，传递模型详情
+    # 初始化LangGraph工作流，传递模型详情
     # 不传递provider参数，让Rerank类自己从模型名称中推断
-    rag_pipeline = RAGPipeline(
+    rag_pipeline = LangGraphWorkflow(
         api_key=model.api_key,
         base_url=model.base_url,
         embedding_model=embedding_model,
@@ -208,9 +208,9 @@ async def chat(
         except Exception as e:
             logger.error(f"Failed to fetch knowledge base models: {e}")
 
-    # 如果本次请求指定了自定义模型（embedding 或 rerank），则创建新 pipeline 实例
+    # 如果本次请求指定了自定义模型（embedding 或 rerank），则创建新 workflow 实例
     if embedding_model is not None and rerank_model is not None:
-        pipeline = RAGPipeline(
+        pipeline = LangGraphWorkflow(
             api_key=api_key,
             base_url=base_url,
             embedding_model=embedding_model,
@@ -221,7 +221,7 @@ async def chat(
         # 复用全局已初始化的 rag_pipeline（由 api/chat.py 初始化）
         if rag_pipeline is None:
             # 如果全局 rag_pipeline 未初始化，创建一个默认的
-            pipeline = RAGPipeline(
+            pipeline = LangGraphWorkflow(
                 api_key=api_key,
                 base_url=base_url
             )
@@ -248,6 +248,17 @@ async def chat(
         user=user  # 传递用户参数，用于权限检查
     )
 
+    # 处理返回结果
+    if isinstance(result, dict) and "generation_result" in result:
+        # 新格式：包含工作流步骤和当前状态
+        workflow_steps = result.get("workflow_steps", [])
+        current_state = result.get("current_state", "completed")
+        result = result["generation_result"]
+    else:
+        # 旧格式：直接返回生成结果
+        workflow_steps = []
+        current_state = "completed"
+
     # 保存 AI 回复
     ai_message = Message(
         conversation_id=conversation.id,
@@ -258,6 +269,10 @@ async def chat(
         token_usage={
             **result.token_usage,
             "response_time": result.response_time,
+        },
+        retrieval_info={
+            "workflow_steps": workflow_steps,
+            "current_state": current_state
         },
     )
     db.add(ai_message)
@@ -290,6 +305,35 @@ async def chat(
         for c in result.citations
     ]
 
+    # 检查是否需要返回表格数据
+    table_data = None
+    if result.answer and '|' in result.answer and '---' in result.answer:
+        # 简单的表格检测逻辑
+        lines = result.answer.split('\n')
+        headers = []
+        rows = []
+        in_table = False
+        for line in lines:
+            line = line.strip()
+            if line.startswith('|') and '---' not in line:
+                if not in_table:
+                    in_table = True
+                # 解析表格行
+                cells = [cell.strip() for cell in line.strip('|').split('|')]
+                if headers:
+                    rows.append(cells)
+                else:
+                    headers = cells
+            elif '---' in line and in_table:
+                # 表格分隔线，跳过
+                continue
+            elif in_table and not line:
+                # 表格结束
+                break
+        if headers and rows:
+            from backend.app.schemas.chat import TableData
+            table_data = TableData(headers=headers, rows=rows)
+
     return ChatResponse(
         message_id=ai_message.id,
         conversation_id=conversation.id,
@@ -297,7 +341,15 @@ async def chat(
         citations=citations,
         confidence=result.confidence,
         # suggested_questions=result.suggested_questions,
-        token_usage=result.token_usage,
+        token_usage={
+            **result.token_usage,
+            "response_time": result.response_time,
+        },
+        retrieval_info={
+            "workflow_steps": workflow_steps,
+            "current_state": current_state
+        },
+        table_data=table_data
     )
 
 async def chat_stream(
@@ -316,6 +368,30 @@ async def chat_stream(
     )
     user = user_result.scalar_one_or_none()
     
+    # 获取或创建对话
+    if request.conversation_id:
+        result = await db.execute(
+            select(Conversation).where(Conversation.id == request.conversation_id)
+        )
+        conversation = result.scalar_one_or_none()
+        if not conversation:
+            # 为新对话生成新的 UUID，不使用前端的临时 ID
+            conversation = Conversation(
+                user_id=user_id,
+                kb_id=request.kb_ids[0] if request.kb_ids else None,
+                title=request.query[:50],
+            )
+            db.add(conversation)
+            await db.flush()
+    else:
+        conversation = Conversation(
+            user_id=user_id,
+            kb_id=request.kb_ids[0] if request.kb_ids else None,
+            title=request.query[:50],
+        )
+        db.add(conversation)
+        await db.flush()
+    
     # 自动获取默认的聊天模型
     result = await db.execute(
         select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
@@ -325,10 +401,10 @@ async def chat_stream(
     if not chat_model:
         raise ValueError("请先前往模型管理设置默认聊天模型")
     
-    # 设置默认模型ID
+    # 设置默认模型 ID
     request.model_id = chat_model.id
 
-    # 获取或创建RAG pipeline
+    # 获取或创建 RAG pipeline
     pipeline = get_rag_pipeline(
         api_key=chat_model.api_key,
         base_url=chat_model.base_url
@@ -336,7 +412,19 @@ async def chat_stream(
 
     # 获取领域信息
     domain = await _get_domain_from_kb(db, request.kb_ids)
-
+    
+    # 保存用户消息
+    user_message = Message(
+        conversation_id=conversation.id,
+        role="user",
+        content=request.query,
+    )
+    db.add(user_message)
+    
+    # 收集完整的回复内容
+    full_content = ""
+    workflow_steps = []
+    
     # 执行流式聊天
     async for token in pipeline.run_stream(
         query=request.query,
@@ -346,7 +434,52 @@ async def chat_stream(
         user=user,  # 传递用户参数，用于权限检查
         db=db  # 传递数据库会话，用于权限检查
     ):
+        # 收集 token
+        full_content += token
         yield token
+        
+        # 尝试解析 workflow_steps（如果有）
+        import json
+        try:
+            if token.startswith('data: '):
+                data = json.loads(token[6:])
+                if 'workflow_steps' in data:
+                    workflow_steps = data['workflow_steps']
+        except:
+            pass
+    
+    # 保存 AI 回复
+    ai_message = Message(
+        conversation_id=conversation.id,
+        role="assistant",
+        content=full_content,
+        citations=[],
+        confidence=0.9,
+        token_usage={},
+        retrieval_info={
+            "workflow_steps": workflow_steps,
+            "current_state": "completed"
+        },
+    )
+    db.add(ai_message)
+    
+    # 创建聊天日志记录
+    chat_log = ChatLog(
+        user_id=user_id,
+        conversation_id=conversation.id,
+        message_id=ai_message.id,
+        query=request.query,
+        answer=full_content,
+        model_used=chat_model.name,
+        knowledge_bases=request.kb_ids,
+        response_time=0,  # 流式响应，暂时设为 0
+    )
+    db.add(chat_log)
+    
+    await db.commit()
+    
+    # 返回消息 ID
+    yield f"data: {json.dumps({'message_id': ai_message.id, 'conversation_id': conversation.id}, ensure_ascii=False)}\n\n"
 
 
 async def agent_chat(
@@ -440,9 +573,9 @@ async def agent_chat(
         except Exception as e:
             logger.error(f"Failed to fetch knowledge base models: {e}")
 
-    # 如果本次请求指定了自定义模型（embedding 或 rerank），则创建新 pipeline 实例
+    # 如果本次请求指定了自定义模型（embedding 或 rerank），则创建新 workflow 实例
     if embedding_model is not None and rerank_model is not None:
-        pipeline = RAGPipeline(
+        pipeline = LangGraphWorkflow(
             api_key=api_key,
             base_url=base_url,
             embedding_model=embedding_model,
@@ -453,7 +586,7 @@ async def agent_chat(
         # 复用全局已初始化的 rag_pipeline（由 api/chat.py 初始化）
         if rag_pipeline is None:
             # 如果全局 rag_pipeline 未初始化，创建一个默认的
-            pipeline = RAGPipeline(
+            pipeline = LangGraphWorkflow(
                 api_key=api_key,
                 base_url=base_url
             )
@@ -489,12 +622,20 @@ async def agent_chat(
         answer = f"智能体执行失败: {agent_result.get('result', {}).get('error', '未知错误')}"
         confidence = 0.0
 
+    # 提取工作流步骤和当前状态
+    workflow_steps = agent_result.get('workflow_steps', [])
+    current_state = agent_result.get('current_state', 'completed')
+
     # 保存 AI 回复
     ai_message = Message(
         conversation_id=conversation.id,
         role="assistant",
         content=answer,
         confidence=confidence,
+        token_usage={
+            "workflow_steps": agent_result.get('workflow_steps', []),
+            "current_state": agent_result.get('current_state', 'completed')
+        },
     )
     db.add(ai_message)
     
@@ -513,6 +654,35 @@ async def agent_chat(
     
     await db.commit()
 
+    # 检查是否需要返回表格数据
+    table_data = None
+    if answer and '|' in answer and '---' in answer:
+        # 简单的表格检测逻辑
+        lines = answer.split('\n')
+        headers = []
+        rows = []
+        in_table = False
+        for line in lines:
+            line = line.strip()
+            if line.startswith('|') and '---' not in line:
+                if not in_table:
+                    in_table = True
+                # 解析表格行
+                cells = [cell.strip() for cell in line.strip('|').split('|')]
+                if headers:
+                    rows.append(cells)
+                else:
+                    headers = cells
+            elif '---' in line and in_table:
+                # 表格分隔线，跳过
+                continue
+            elif in_table and not line:
+                # 表格结束
+                break
+        if headers and rows:
+            from backend.app.schemas.chat import TableData
+            table_data = TableData(headers=headers, rows=rows)
+
     return ChatResponse(
         message_id=ai_message.id,
         conversation_id=conversation.id,
@@ -520,7 +690,11 @@ async def agent_chat(
         citations=[],
         confidence=confidence,
         suggested_questions=[],
-        token_usage={}
+        token_usage={
+            "workflow_steps": agent_result.get('workflow_steps', []),
+            "current_state": agent_result.get('current_state', 'completed')
+        },
+        table_data=table_data
     )
 
 
@@ -537,6 +711,30 @@ async def agent_chat_stream(
     )
     user = user_result.scalar_one_or_none()
     
+    # 获取或创建对话
+    if request.conversation_id:
+        result = await db.execute(
+            select(Conversation).where(Conversation.id == request.conversation_id)
+        )
+        conversation = result.scalar_one_or_none()
+        if not conversation:
+            # 为新对话生成新的 UUID，不使用前端的临时 ID
+            conversation = Conversation(
+                user_id=user_id,
+                kb_id=request.kb_ids[0] if request.kb_ids else None,
+                title=request.query[:50],
+            )
+            db.add(conversation)
+            await db.flush()
+    else:
+        conversation = Conversation(
+            user_id=user_id,
+            kb_id=request.kb_ids[0] if request.kb_ids else None,
+            title=request.query[:50],
+        )
+        db.add(conversation)
+        await db.flush()
+    
     # 自动获取默认的聊天模型
     result = await db.execute(
         select(Model).where(Model.type == "chat", Model.is_active == True).limit(1)
@@ -546,7 +744,7 @@ async def agent_chat_stream(
     if not chat_model:
         raise ValueError("请先前往模型管理设置默认聊天模型")
     
-    # 获取或创建RAG pipeline
+    # 获取或创建 RAG pipeline
     pipeline = get_rag_pipeline(
         api_key=chat_model.api_key,
         base_url=chat_model.base_url
@@ -560,7 +758,20 @@ async def agent_chat_stream(
         'domain': domain,
         'user': user
     }
-
+    
+    # 保存用户消息
+    user_message = Message(
+        conversation_id=conversation.id,
+        role="user",
+        content=request.query,
+    )
+    db.add(user_message)
+    
+    # 收集完整的回复内容和工作流步骤
+    full_content = ""
+    workflow_steps = []
+    current_state = "running"
+    
     # 执行智能体流式聊天
     async for token in pipeline.run_with_agent_stream(
         query=request.query,
@@ -570,4 +781,85 @@ async def agent_chat_stream(
         api_key=chat_model.api_key,
         base_url=chat_model.base_url
     ):
+        # 收集 token（只提取纯文本内容）
+        import json
+        try:
+            # 尝试解析 token，如果是 JSON 格式，提取内部的 token 字段
+            if token.startswith('data: '):
+                data = json.loads(token[6:])
+                # 如果是工作流步骤信息，不添加到 full_content
+                if 'workflow_steps' in data or 'current_step' in data or 'message_id' in data:
+                    pass  # 不添加到 full_content
+                elif 'token' in data:
+                    # 如果是 token 数据，检查是否是嵌套的 JSON
+                    inner_token = data['token']
+                    if isinstance(inner_token, str) and inner_token.startswith('data: '):
+                        try:
+                            inner_data = json.loads(inner_token[6:])
+                            # 过滤掉 [DONE] 标记
+                            if inner_data.get('token') == '[DONE]' or (isinstance(inner_data.get('token'), str) and '[DONE]' in inner_data.get('token', '')):
+                                pass  # 不添加 [DONE]
+                            elif 'token' in inner_data:
+                                full_content += inner_data['token']
+                        except:
+                            # 不是 JSON，直接添加（但要过滤 [DONE]）
+                            if '[DONE]' not in inner_token:
+                                full_content += inner_token
+                    else:
+                        # 过滤掉 [DONE]
+                        if '[DONE]' not in inner_token:
+                            full_content += inner_token
+            else:
+                # 普通 token，直接添加（过滤 [DONE]）
+                if '[DONE]' not in token:
+                    full_content += token
+        except:
+            # 解析失败，直接添加原始 token（过滤 [DONE]）
+            if '[DONE]' not in token:
+                full_content += token
+        
         yield token
+        
+        # 尝试解析 workflow_steps（如果有）
+        try:
+            if token.startswith('data: '):
+                data = json.loads(token[6:])
+                if 'workflow_steps' in data:
+                    workflow_steps = data['workflow_steps']
+                if 'current_state' in data:
+                    current_state = data['current_state']
+        except:
+            pass
+    
+    # 保存 AI 回复
+    ai_message = Message(
+        conversation_id=conversation.id,
+        role="assistant",
+        content=full_content,
+        citations=[],
+        confidence=0.9,
+        token_usage={
+            "workflow_steps": workflow_steps,
+            "current_state": current_state
+        },
+    )
+    db.add(ai_message)
+    
+    # 创建聊天日志记录
+    chat_log = ChatLog(
+        user_id=user_id,
+        conversation_id=conversation.id,
+        message_id=ai_message.id,
+        query=request.query,
+        answer=full_content,
+        model_used=chat_model.name,
+        knowledge_bases=request.kb_ids,
+        agent_used="research_agent",  # 默认智能体
+        response_time=0,  # 流式响应，暂时设为 0
+    )
+    db.add(chat_log)
+    
+    await db.commit()
+    
+    # 返回消息 ID
+    yield f"data: {json.dumps({'message_id': ai_message.id, 'conversation_id': conversation.id}, ensure_ascii=False)}\n\n"

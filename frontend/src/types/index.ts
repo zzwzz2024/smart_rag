@@ -78,7 +78,33 @@ export interface ChatMessage {
   content: string
   citations?: Citation[]
   confidence?: number
+  token_usage?: {
+    prompt?: number
+    completion?: number
+    total?: number
+    response_time?: number
+  }
+  retrieval_info?: {
+    workflow_steps?: WorkflowStep[]
+    current_state?: string
+  }
+  table_data?: TableData
   created_at: string
+}
+
+// 工作流步骤类型
+export interface WorkflowStep {
+  step: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  input?: string
+  output?: string
+  timestamp?: string
+}
+
+// 表格数据类型
+export interface TableData {
+  headers: string[]
+  rows: string[][]
 }
 
 // 引用类型

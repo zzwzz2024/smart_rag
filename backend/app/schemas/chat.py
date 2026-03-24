@@ -27,6 +27,12 @@ class Citation(BaseModel):
     highlight: Optional[str] = Field(None, description="高亮内容，可选")
 
 
+class TableData(BaseModel):
+    """表格数据"""
+    headers: List[str] = Field(..., description="表头")
+    rows: List[List[str]] = Field(..., description="行数据")
+
+
 class ChatResponse(BaseModel):
     """聊天响应"""
     message_id: str = Field(..., description="消息ID")
@@ -36,6 +42,7 @@ class ChatResponse(BaseModel):
     confidence: float = Field(0.0, description="置信度")
     suggested_questions: List[str] = Field(default_factory=list, description="建议问题列表")
     token_usage: Optional[dict] = Field(None, description="token使用情况，可选")
+    table_data: Optional[TableData] = Field(None, description="表格数据，可选")
 
 
 class ConversationResponse(BaseModel):

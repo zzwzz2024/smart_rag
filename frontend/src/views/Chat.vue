@@ -70,19 +70,12 @@
                 v-model="contextRound"
                 class="context-select"
               >
-                <option value="2">2轮</option>
-                <option value="4">4轮</option>
-                <option value="6">6轮</option>
-                <option value="8">8轮</option>
-                <option value="10">10轮</option>
+                <option value="2">2 轮</option>
+                <option value="4">4 轮</option>
+                <option value="6">6 轮</option>
+                <option value="8">8 轮</option>
+                <option value="10">10 轮</option>
               </select>
-            </div>
-            <div class="select-with-label">
-              <label>智能体模式</label>
-              <label class="switch">
-                <input type="checkbox" v-model="useAgent">
-                <span class="slider round"></span>
-              </label>
             </div>
             <button
               class="btn btn-primary"
@@ -102,32 +95,85 @@
             :class="message.role === 'user' ? 'chat-message-user' : 'chat-message-bot'"
           >
             <div class="chat-message-content">
-              {{ formatMessageContent(message.content) }}
-              <div v-if="message.role === 'assistant' && message.confidence" class="confidence-badge" :class="{
-                'confidence-low': message.confidence < 0.5,
-                'confidence-medium': message.confidence >= 0.5 && message.confidence < 0.75,
-                'confidence-high': message.confidence >= 0.75
-              }">
-                置信度: {{ Math.round(message.confidence * 100) }}%
+              <!-- 用户消息 -->
+              <div v-if="message.role === 'user'" class="user-message-bubble">
+                <div class="user-message-content">{{ message.content }}</div>
+                <div class="user-message-actions">
+                  <button class="user-copy-button" @click="copyMessage(message.content)">
+                    复制
+                  </button>
+                </div>
               </div>
-              <button class="copy-button" @click="copyMessage(message.content)">
-                复制
-              </button>
-              <div v-if="message.role === 'assistant'" class="feedback-buttons">
-                <button 
-                  class="feedback-btn feedback-positive"
-                  @click="submitFeedback(message.id, 1)"
-                  :class="{ 'feedback-given': message.feedback === 1 }"
-                >
-                  👍
-                </button>
-                <button 
-                  class="feedback-btn feedback-negative"
-                  @click="submitFeedback(message.id, 0)"
-                  :class="{ 'feedback-given': message.feedback === 0 }"
-                >
-                  👎
-                </button>
+              
+              <!-- AI 消息 -->
+              <div v-else class="bot-message-container">
+                <!-- 步骤列表 -->
+                <div v-if="showWorkflowSteps(message)" class="workflow-steps-list">
+                  <ul>
+                    <li v-for="(step, index) in getWorkflowSteps(message)" :key="index" class="workflow-step-item">
+                      <div class="step-indicator" :class="{ 'completed': step.status === 'completed', 'current': step.status === 'running' }"></div>
+                      <span class="step-text">{{ translateStepName(step.step) }}</span>
+                    </li>
+                    <!-- 添加完成标记 -->
+                    <li v-if="isWorkflowCompleted(message)" class="workflow-step-item">
+                      <div class="step-indicator completed"></div>
+                      <span class="step-text">完成</span>
+                    </li>
+                  </ul>
+                </div>
+                
+                <!-- 消息内容 -->
+                <div v-if="message.content" class="message-text">
+                  {{ formatMessageContent(message.content) }}
+                </div>
+                
+                <!-- 置信度 -->
+                <div v-if="message.confidence" class="confidence-badge" :class="{
+                  'confidence-low': message.confidence < 0.5,
+                  'confidence-medium': message.confidence >= 0.5 && message.confidence < 0.75,
+                  'confidence-high': message.confidence >= 0.75
+                }">
+                  置信度：{{ Math.round(message.confidence * 100) }}%
+                </div>
+                
+                <!-- 表格输出 -->
+                <div v-if="message.table_data" class="table-container">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th v-for="(header, index) in message.table_data.headers" :key="index">{{ header }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(row, rowIndex) in message.table_data.rows" :key="rowIndex">
+                        <td v-for="(cell, cellIndex) in row" :key="cellIndex">{{ cell }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                
+                <!-- 操作按钮 -->
+                <div class="message-actions">
+                  <button class="copy-button" @click="copyMessage(message.content)">
+                    复制
+                  </button>
+                  <div class="feedback-buttons">
+                    <button 
+                      class="feedback-btn feedback-positive"
+                      @click="submitFeedback(message.id, 1)"
+                      :class="{ 'feedback-given': message.feedback === 1 }"
+                    >
+                      👍
+                    </button>
+                    <button 
+                      class="feedback-btn feedback-negative"
+                      @click="submitFeedback(message.id, 0)"
+                      :class="{ 'feedback-given': message.feedback === 0 }"
+                    >
+                      👎
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             <div v-if="message.role === 'assistant' && message.citations && message.citations.length > 0" class="citations">
@@ -145,7 +191,30 @@
           </div>
           <div v-if="chatStore.isSending" class="loading-message">
             <div class="loading"></div>
-            <span>AI 正在思考...</span>
+            <div class="loading-content">
+              <div class="loading-title">AI 正在处理...</div>
+              <div v-if="chatStore.totalWorkflowSteps > 0" class="loading-progress">
+                <div class="progress-dots">
+                  <div 
+                    v-for="(step, index) in chatStore.totalWorkflowSteps" 
+                    :key="index"
+                    class="progress-dot"
+                    :class="{ 'active': index <= chatStore.currentWorkflowStepIndex }"
+                  ></div>
+                </div>
+                <div class="loading-step" v-if="chatStore.currentWorkflowStep">
+                  {{ chatStore.currentWorkflowStep }}
+                </div>
+              </div>
+              <div v-else class="loading-progress">
+                <div class="progress-dots">
+                  <div class="progress-dot"></div>
+                  <div class="progress-dot"></div>
+                  <div class="progress-dot"></div>
+                </div>
+                <div class="loading-step">准备中...</div>
+              </div>
+            </div>
           </div>
           <div v-if="chatStore.messages.length === 0 && !chatStore.isSending" class="empty-chat">
             <p>开始与 AI 聊天吧！</p>
@@ -161,7 +230,7 @@
             placeholder="输入消息..."
             rows="3"
             :disabled="chatStore.isSending"
-            @keyup.enter.ctrl="sendMessage"
+            @keyup.enter.ctrl="agentChat"
           ></textarea>
           <div class="input-actions">
             <div class="input-info">
@@ -169,7 +238,7 @@
             </div>
             <button
               class="btn btn-primary send-btn"
-              @click="sendMessage"
+              @click="agentChat"
               :disabled="!inputMessage.trim() || chatStore.isSending"
             >
               发送
@@ -289,7 +358,7 @@ const togglePinConversation = async (conversation: Conversation) => {
 }
 
 // 发送消息
-const sendMessage = async () => {
+const agentChat = async () => {
   if (!inputMessage.value.trim()) return
 
   const message = inputMessage.value.trim()
@@ -298,9 +367,9 @@ const sendMessage = async () => {
     // 发送前清空输入框
     inputMessage.value = ''
     if (useAgent.value) {
-      await chatStore.agentSendMessageStream(message, undefined, undefined, parseInt(contextRound.value.toString()))
+      await chatStore.agentagentChatStream(message, undefined, undefined, parseInt(contextRound.value.toString()))
     } else {
-      await chatStore.sendMessage(message, undefined, undefined, parseInt(contextRound.value.toString()))
+      await chatStore.agentChat(message, undefined, undefined, parseInt(contextRound.value.toString()))
     }
     // 滚动到聊天消息底部
     scrollToBottom()
@@ -409,13 +478,69 @@ const formatMessageContent = (content: string): string => {
   let formatted = content
 
   // 只在编号前不是换行符时才添加换行（排除已经在行首的编号）
-  // 匹配"非换行符 + 可选空白 + 数字." 的模式
+  // 匹配"非换行符 + 可选空白 + 数字。" 的模式
   formatted = formatted.replace(/([^\r\n\d])\s*(\d+\.\s+)/g, '$1\n$2')
 
   // 处理可能出现的多个连续换行
   formatted = formatted.replace(/\n{3,}/g, '\n\n')
 
   return formatted
+}
+
+// 检查消息是否有工作流步骤
+const hasWorkflowSteps = (message: any): boolean => {
+  const steps = getWorkflowSteps(message)
+  return steps && steps.length > 0
+}
+
+// 检查是否显示工作流步骤（有 retrieval_info 就显示）
+const showWorkflowSteps = (message: any): boolean => {
+  return message.retrieval_info !== undefined && message.retrieval_info !== null
+}
+
+// 检查工作流是否完成
+const isWorkflowCompleted = (message: any): boolean => {
+  return message.retrieval_info?.current_state === 'completed'
+}
+
+// 获取工作流步骤
+const getWorkflowSteps = (message: any): any[] => {
+  // 优先从 retrieval_info 获取
+  if (message.retrieval_info?.workflow_steps) {
+    return message.retrieval_info.workflow_steps
+  }
+  // 尝试从 content 解析（兼容旧数据）
+  if (message.content) {
+    try {
+      // 检查是否是 JSON 字符串
+      if (message.content.startsWith('data:')) {
+        const jsonStr = message.content.substring(5)
+        const parsed = JSON.parse(jsonStr)
+        if (parsed.workflow_steps) {
+          return parsed.workflow_steps
+        }
+      }
+    } catch (e) {
+      // 不是 JSON 格式，忽略
+    }
+  }
+  return []
+}
+
+// 翻译步骤名称
+const translateStepName = (stepName: string): string => {
+  const stepTranslations: Record<string, string> = {
+    'process_query': '处理查询',
+    'detect_intent': '意图识别',
+    'retrieve': '检索文档',
+    'rerank': '重排序',
+    'generate': '生成回答',
+    'validate_sql': '验证 SQL',
+    'execute_sql': '执行 SQL',
+    'filter_data': '过滤数据',
+    'format_output': '格式化输出'
+  }
+  return stepTranslations[stepName] || stepName
 }
 
 // 监听消息列表变化，自动滚动到最底部
@@ -753,56 +878,98 @@ body.dark-mode .context-select {
 /* 聊天消息列表 */
 .chat-messages {
   flex: 1;
-  padding: 20px;
+  padding: 30px 40px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
+  background-color: #f9fafb;
 }
 
 .chat-message {
-  max-width: 80%;
-  padding: 12px 16px;
-  border-radius: 18px;
-  word-wrap: break-word;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
 }
 
 .chat-message-user {
   align-self: flex-end;
-  background-color: #e3f2fd;
-  border-radius: 18px 18px 4px 18px;
+  max-width: 70%;
 }
 
 .chat-message-bot {
   align-self: flex-start;
-  background-color: #f5f5f5;
-  border-radius: 18px 18px 18px 4px;
+  max-width: 85%;
 }
 
 .chat-message-content {
-  font-size: 14px;
-  line-height: 1.5;
-  margin-bottom: 8px;
   position: relative;
-  padding-right: 60px; /* 为复制按钮留出空间 */
-  white-space: pre-wrap; /* 保留换行符和空格 */
+}
+
+/* 用户消息气泡样式 */
+.user-message-bubble {
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  padding: 14px 18px;
+  border-radius: 18px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #1a1a1a;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-message-content {
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.user-message-actions {
+  display: flex;
+  gap: 8px;
+  align-self: flex-start;
+}
+
+.user-copy-button {
+  background-color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #555;
+  opacity: 0.8;
+}
+
+.user-copy-button:hover {
+  background-color: rgba(255, 255, 255, 0.9);
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+/* AI 消息容器样式 */
+.bot-message-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 
 .copy-button {
-  position: absolute;
-  top: 0;
-  right: 0;
-  background-color: rgba(0, 0, 0, 0.1);
-  border: none;
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 12px;
+  position: static;
+  background-color: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s ease;
-  opacity: 0;
-  z-index: 1;
-  white-space: nowrap;
+  color: #555;
+  opacity: 1;
 }
 
 .chat-message:hover .copy-button {
@@ -810,7 +977,8 @@ body.dark-mode .context-select {
 }
 
 .copy-button:hover {
-  background-color: rgba(0, 0, 0, 0.2);
+  background-color: #e8e8e8;
+  border-color: #d0d0d0;
 }
 
 body.dark-mode .copy-button {
@@ -825,29 +993,28 @@ body.dark-mode .copy-button:hover {
 .feedback-buttons {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
 }
 
 .feedback-btn {
   background: none;
-  border: 1px solid #ddd;
+  border: 1px solid #e0e0e0;
   border-radius: 50%;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 18px;
   transition: all 0.2s ease;
 }
 
 .feedback-btn:hover {
-  transform: scale(1.1);
+  transform: scale(1.15);
 }
 
 .feedback-positive:hover {
-  background-color: #e8f5e8;
+  background-color: #e8f5e9;
   border-color: #4CAF50;
 }
 
@@ -857,7 +1024,7 @@ body.dark-mode .copy-button:hover {
 }
 
 .feedback-given.feedback-positive {
-  background-color: #e8f5e8;
+  background-color: #e8f5e9;
   border-color: #4CAF50;
   color: #4CAF50;
 }
@@ -892,6 +1059,17 @@ body.dark-mode .feedback-given.feedback-negative {
   background-color: rgba(244, 67, 54, 0.2);
   border-color: #f44336;
   color: #f44336;
+}
+
+body.dark-mode .copy-button {
+  background-color: #404040;
+  border-color: #555;
+  color: #e0e0e0;
+}
+
+body.dark-mode .copy-button:hover {
+  background-color: #4a4a4a;
+  border-color: #666;
 }
 
 .confidence-badge {
@@ -937,6 +1115,212 @@ body.dark-mode .feedback-given.feedback-negative {
   color: #666;
 }
 
+/* 步骤列表样式 */
+.workflow-steps-list {
+  background: linear-gradient(135deg, #f1f8f4 0%, #e8f5e9 100%);
+  border-radius: 12px;
+  padding: 16px 20px;
+  border-left: 4px solid #4CAF50;
+  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.1);
+}
+
+.workflow-steps-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-step-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: #2c3e50;
+  padding: 6px 0;
+  transition: all 0.3s ease;
+}
+
+.workflow-step-item:last-child {
+  margin-bottom: 0;
+}
+
+.step-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #c8e6c9;
+  margin-right: 12px;
+  flex-shrink: 0;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.step-indicator::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: transparent;
+  transition: all 0.3s ease;
+}
+
+.step-indicator.completed {
+  background-color: #4CAF50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.15);
+}
+
+.step-indicator.completed::before {
+  background-color: white;
+}
+
+.step-indicator.current {
+  background-color: #66bb6a;
+  animation: pulse 1.5s infinite;
+}
+
+.step-indicator.current::before {
+  background-color: white;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(102, 187, 106, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(102, 187, 106, 0);
+  }
+}
+
+.step-text {
+  flex: 1;
+  font-weight: 500;
+}
+
+.step-indicator.completed + .step-text {
+  color: #2e7d32;
+}
+
+.step-indicator.current + .step-text {
+  color: #1b5e20;
+  font-weight: 600;
+}
+
+/* 消息文本样式 */
+.message-text {
+  line-height: 1.6;
+  white-space: pre-wrap;
+  font-size: 15px;
+  color: #2c3e50;
+  padding: 4px 0;
+}
+
+/* 表格容器样式 */
+.table-container {
+  margin: 12px 0;
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.data-table th {
+  background-color: #f5f5f5;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+  font-weight: 600;
+}
+
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* 消息操作按钮样式 */
+.message-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.copy-button {
+  background-color: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #555;
+}
+
+.copy-button:hover {
+  background-color: #e8e8e8;
+  border-color: #d0d0d0;
+}
+
+/* 暗色模式样式 */
+body.dark-mode .workflow-steps-list {
+  background: linear-gradient(135deg, #1e3a2f 0%, #1a2e2a 100%);
+  border-left-color: #4CAF50;
+}
+
+body.dark-mode .workflow-step-item {
+  color: #c8e6c9;
+}
+
+body.dark-mode .step-indicator {
+  background-color: #2e7d32;
+}
+
+body.dark-mode .step-indicator.completed {
+  background-color: #4CAF50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.3);
+}
+
+body.dark-mode .step-indicator.current {
+  background-color: #66bb6a;
+}
+
+body.dark-mode .step-indicator.completed + .step-text {
+  color: #81c784;
+}
+
+body.dark-mode .step-indicator.current + .step-text {
+  color: #a5d6a7;
+}
+
+body.dark-mode .table-container {
+  border-color: #555555;
+}
+
+body.dark-mode .data-table th {
+  background-color: #333333;
+  border-bottom-color: #555555;
+  color: #e0e0e0;
+}
+
+body.dark-mode .data-table td {
+  border-bottom-color: #555555;
+  color: #e0e0e0;
+}
+
 .citations ul {
   margin: 0;
   padding-left: 16px;
@@ -966,11 +1350,74 @@ body.dark-mode .feedback-given.feedback-negative {
 .loading-message {
   align-self: flex-start;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 12px;
   padding: 12px 16px;
   background-color: #f5f5f5;
   border-radius: 18px 18px 18px 4px;
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.loading-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.loading-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #e0e0e0;
+  transition: all 0.3s ease;
+}
+
+.progress-dot.active {
+  background-color: #4CAF50;
+  transform: scale(1.2);
+}
+
+.loading-step {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
+}
+
+body.dark-mode .loading-message {
+  background-color: #333333;
+}
+
+body.dark-mode .loading-title {
+  color: #e0e0e0;
+}
+
+body.dark-mode .loading-step {
+  color: #a0a0a0;
+}
+
+body.dark-mode .progress-dot {
+  background-color: #555555;
+}
+
+body.dark-mode .progress-dot.active {
+  background-color: #4CAF50;
 }
 
 .empty-chat {
@@ -1126,6 +1573,60 @@ body.dark-mode .confidence-high {
   background-color: rgba(46, 125, 50, 0.2);
   color: #81c784;
   border-color: rgba(46, 125, 50, 0.3);
+}
+
+body.dark-mode .message-text {
+  color: #e0e0e0;
+}
+
+body.dark-mode .user-message-bubble {
+  background: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
+  color: #e0e0e0;
+}
+
+body.dark-mode .workflow-steps-list {
+  background: linear-gradient(135deg, #1e3a2f 0%, #1a2e2a 100%);
+  border-left-color: #4CAF50;
+}
+
+body.dark-mode .workflow-step-item {
+  color: #c8e6c9;
+}
+
+body.dark-mode .step-indicator {
+  background-color: #2e7d32;
+}
+
+body.dark-mode .step-indicator.completed {
+  background-color: #4CAF50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.3);
+}
+
+body.dark-mode .step-indicator.current {
+  background-color: #66bb6a;
+}
+
+body.dark-mode .step-indicator.completed + .step-text {
+  color: #81c784;
+}
+
+body.dark-mode .step-indicator.current + .step-text {
+  color: #a5d6a7;
+}
+
+body.dark-mode .message-actions {
+  border-top-color: #555;
+}
+
+body.dark-mode .copy-button {
+  background-color: #404040;
+  border-color: #555;
+  color: #e0e0e0;
+}
+
+body.dark-mode .copy-button:hover {
+  background-color: #4a4a4a;
+  border-color: #666;
 }
 
 body.dark-mode .citations {
