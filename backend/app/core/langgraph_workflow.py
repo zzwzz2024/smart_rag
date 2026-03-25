@@ -1003,88 +1003,76 @@ class LangGraphWorkflow:
             # 初始化 runnable
             if self.runnable is None:
                 self.runnable = self.graph.compile()
-            
+
             # 构建初始状态
             initial_state = RAGState(**kwargs)
-            
+
             # 定义一个函数来流式处理工作流步骤
             async def process_workflow_steps():
-                # 运行工作流获取结果
-                result = await self.runnable.ainvoke(initial_state)
-                
-                # 检查 result 是否为字典
-                if isinstance(result, dict):
-                    # 发送工作流步骤信息
-                    workflow_steps = result.get("workflow_steps", [])
-                    # 只发送一次工作流步骤信息
+                # 运行工作流获取结果，使用 stream 模式
+                # astream_events 返回的是每个节点的输出字典，如 {'node_name': output}
+                workflow_steps = []
+                final_answer = ""
+
+                async for event in self.runnable.astream_events(initial_state, version="v2"):
                     import json
-                    yield f"data: {json.dumps({'workflow_steps': workflow_steps}, ensure_ascii=False)}\n\n"
+
+                    # 处理节点完成事件
+                    if event['event'] == 'on_chain_end' or event['event'] == 'on_chain_start':
+                        node_name = event.get('name', '')
+
+                        # 如果是工作流步骤相关的节点，发送更新
+                        if node_name in ['process_query', 'detect_intent', 'retrieve', 'rerank', 'generate']:
+                            # 构建当前步骤信息
+                            step_info = {
+                                'step': node_name,
+                                'status': 'in_progress' if event['event'] == 'on_chain_start' else 'completed',
+                                'timestamp': event.get('start_time', event.get('end_time', ''))
+                            }
+
+                            yield f"data: {json.dumps({'current_step': step_info}, ensure_ascii=False)}\n\n"
+
+                    # 如果有生成器的 token 输出
+                    if event['event'] == 'on_chain_end':
+                        chunks = event.get('data', {}).get('chunk', [])
+                        for chunk in chunks:
+                            if hasattr(chunk, 'content') and chunk.content:
+                                # 流式返回 token
+                                yield f"data: {json.dumps({'token': chunk.content}, ensure_ascii=False)}\n\n"
+                                final_answer += chunk.content
+
+                    # 收集工作流步骤
+                    if event['event'] == 'on_chain_end' and node_name in ['process_query', 'detect_intent', 'retrieve',
+                                                                          'rerank', 'generate']:
+                        metadata = event.get('metadata', {})
+                        step_info = {
+                            'step': node_name,
+                            'status': 'completed',
+                            'timestamp': event.get('end_time', ''),
+                            'input': metadata.get('checkpoint_ns', ''),
+                            'output': str(event.get('data', {}).get('output', {}))[:100]  # 限制长度
+                        }
+                        workflow_steps.append(step_info)
+
+                    if event.get('name', '') == 'generate' and event.get('event', "") == 'on_chain_end':
+                        # 发送结束标记
+                        final_answer = "查询结果是:x.........."
+
+                # 发送完整的工作流步骤信息
+                if workflow_steps:
                     import asyncio
-                    await asyncio.sleep(0.05)
-                    
-                    # 发送每个步骤的状态更新
-                    for i, step in enumerate(workflow_steps):
-                        import json
-                        yield f"data: {json.dumps({'current_step': step['step'], 'step_index': i}, ensure_ascii=False)}\n\n"
-                        import asyncio
-                        await asyncio.sleep(0.1)  # 控制步骤更新速度
-                    
-                    # 流式输出
-                    if result.get("generation_result"):
-                        answer = result["generation_result"].answer
-                        for char in answer:
-                            import json
-                            yield f"data: {json.dumps({'token': char}, ensure_ascii=False)}\n\n"
-                            import asyncio
-                            await asyncio.sleep(0.01)  # 控制输出速度
-                    else:
-                        error_message = f"处理请求时出错: {result.get('error') or '未知错误'}"
-                        for char in error_message:
-                            import json
-                            yield f"data: {json.dumps({'token': char}, ensure_ascii=False)}\n\n"
-                            import asyncio
-                            await asyncio.sleep(0.01)
-                else:
-                    # 发送工作流步骤信息
-                    workflow_steps = result.workflow_steps
-                    # 只发送一次工作流步骤信息
-                    import json
-                    yield f"data: {json.dumps({'workflow_steps': workflow_steps}, ensure_ascii=False)}\n\n"
-                    import asyncio
-                    await asyncio.sleep(0.05)
-                    
-                    # 发送每个步骤的状态更新
-                    for i, step in enumerate(workflow_steps):
-                        import json
-                        yield f"data: {json.dumps({'current_step': step['step'], 'step_index': i}, ensure_ascii=False)}\n\n"
-                        import asyncio
-                        await asyncio.sleep(0.1)  # 控制步骤更新速度
-                    
-                    # 流式输出
-                    if result.generation_result:
-                        answer = result.generation_result.answer
-                        for char in answer:
-                            import json
-                            yield f"data: {json.dumps({'token': char}, ensure_ascii=False)}\n\n"
-                            import asyncio
-                            await asyncio.sleep(0.01)  # 控制输出速度
-                    else:
-                        error_message = f"处理请求时出错: {result.error or '未知错误'}"
-                        for char in error_message:
-                            import json
-                            yield f"data: {json.dumps({'token': char}, ensure_ascii=False)}\n\n"
-                            import asyncio
-                            await asyncio.sleep(0.01)
-            
+                    await asyncio.sleep(0.05)  # 短暂延迟，确保前面的步骤更新已发送
+                    yield f"data: {json.dumps({'workflow_steps': final_answer}, ensure_ascii=False)}\n\n"
+
             # 执行并返回结果
             async for chunk in process_workflow_steps():
                 yield chunk
-            
-            # 发送结束标记
+
             yield "data: [DONE]\n\n"
+
         except Exception as e:
             logger.error(f"Agent workflow stream failed: {e}")
-            error_message = f"处理请求时出错: {str(e)}"
+            error_message = f"处理请求时出错：{str(e)}"
             for char in error_message:
                 import json
                 yield f"data: {json.dumps({'token': char}, ensure_ascii=False)}\n\n"

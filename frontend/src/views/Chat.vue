@@ -108,19 +108,19 @@
               <!-- AI 消息 -->
               <div v-else class="bot-message-container">
                 <!-- 步骤列表 -->
-                <div v-if="showWorkflowSteps(message)" class="workflow-steps-list">
-                  <ul>
-                    <li v-for="(step, index) in getWorkflowSteps(message)" :key="index" class="workflow-step-item">
-                      <div class="step-indicator" :class="{ 'completed': step.status === 'completed', 'current': step.status === 'running' }"></div>
-                      <span class="step-text">{{ translateStepName(step.step) }}</span>
-                    </li>
-                    <!-- 添加完成标记 -->
-                    <li v-if="isWorkflowCompleted(message)" class="workflow-step-item">
-                      <div class="step-indicator completed"></div>
-                      <span class="step-text">完成</span>
-                    </li>
-                  </ul>
-                </div>
+<!--                <div v-if="showWorkflowSteps(message)" class="workflow-steps-list">-->
+<!--                  <ul>-->
+<!--                    <li v-for="(step, index) in getWorkflowSteps(message)" :key="index" class="workflow-step-item">-->
+<!--                      <div class="step-indicator" :class="{ 'completed': step.status === 'completed', 'current': step.status === 'running' }"></div>-->
+<!--                      <span class="step-text">{{ translateStepName(step.step) }}</span>-->
+<!--                    </li>-->
+<!--                    &lt;!&ndash; 添加完成标记 &ndash;&gt;-->
+<!--                    <li v-if="isWorkflowCompleted(message)" class="workflow-step-item">-->
+<!--                      <div class="step-indicator completed"></div>-->
+<!--                      <span class="step-text">完成</span>-->
+<!--                    </li>-->
+<!--                  </ul>-->
+<!--                </div>-->
                 
                 <!-- 消息内容 -->
                 <div v-if="message.content" class="message-text">
@@ -203,7 +203,7 @@
                   ></div>
                 </div>
                 <div class="loading-step" v-if="chatStore.currentWorkflowStep">
-                  {{ chatStore.currentWorkflowStep }}
+                  {{ translateStepName(chatStore.currentWorkflowStep) }}
                 </div>
               </div>
               <div v-else class="loading-progress">
@@ -254,22 +254,18 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useChatStore } from '../stores/chat'
-import { useKbStore } from '../stores/kb'
 import { useModelStore } from '../stores/model'
 import { ElMessage } from 'element-plus'
-import { chatApi } from '../api/chat'
 import { agentApi } from '../api/agent'
 import type { Conversation } from '../types'
 
 const route = useRoute()
 const chatStore = useChatStore()
-const kbStore = useKbStore()
 const modelStore = useModelStore()
 
 const inputMessage = ref('')
 
 const contextRound = ref<number>(4)
-const useAgent = ref<boolean>(false)
 
 // 对话重命名相关
 const editingConversationId = ref<string | null>(null)
@@ -362,14 +358,14 @@ const agentChat = async () => {
   if (!inputMessage.value.trim()) return
 
   const message = inputMessage.value.trim()
-
+  console.log(message)
   try {
     // 发送前清空输入框
     inputMessage.value = ''
-    if (useAgent.value) {
-      await chatStore.agentagentChatStream(message, undefined, undefined, parseInt(contextRound.value.toString()))
+     if (message) {
+      await chatStore.agentSendMessageStream(message, undefined, undefined, parseInt(contextRound.value.toString()))
     } else {
-      await chatStore.agentChat(message, undefined, undefined, parseInt(contextRound.value.toString()))
+      await chatStore.agentSendMessage(message, undefined, undefined, parseInt(contextRound.value.toString()))
     }
     // 滚动到聊天消息底部
     scrollToBottom()
@@ -408,14 +404,6 @@ const scrollToBottom = () => {
       chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight
     }
   }, 100)
-}
-
-// 切换暗色模式
-const toggleDarkMode = () => {
-  const body = document.body
-  body.classList.toggle('dark-mode')
-  // 这里可以添加保存暗色模式设置的逻辑
-  localStorage.setItem('darkMode', body.classList.contains('dark-mode') ? 'true' : 'false')
 }
 
 // 复制消息内容
@@ -487,11 +475,6 @@ const formatMessageContent = (content: string): string => {
   return formatted
 }
 
-// 检查消息是否有工作流步骤
-const hasWorkflowSteps = (message: any): boolean => {
-  const steps = getWorkflowSteps(message)
-  return steps && steps.length > 0
-}
 
 // 检查是否显示工作流步骤（有 retrieval_info 就显示）
 const showWorkflowSteps = (message: any): boolean => {
@@ -524,7 +507,14 @@ const getWorkflowSteps = (message: any): any[] => {
       // 不是 JSON 格式，忽略
     }
   }
-  return []
+  // 如果没有工作流步骤，返回默认的步骤列表
+  return [
+    { step: 'process_query', status: 'completed' },
+    { step: 'detect_intent', status: 'completed' },
+    { step: 'retrieve', status: 'completed' },
+    { step: 'rerank', status: 'completed' },
+    { step: 'generate', status: 'completed' }
+  ]
 }
 
 // 翻译步骤名称

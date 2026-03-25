@@ -788,27 +788,12 @@ async def agent_chat_stream(
             if token.startswith('data: '):
                 data = json.loads(token[6:])
                 # 如果是工作流步骤信息，不添加到 full_content
-                if 'workflow_steps' in data or 'current_step' in data or 'message_id' in data:
+                if  'current_step' in data or 'message_id' in data:
                     pass  # 不添加到 full_content
-                elif 'token' in data:
+                elif 'workflow_steps' in data:
                     # 如果是 token 数据，检查是否是嵌套的 JSON
-                    inner_token = data['token']
-                    if isinstance(inner_token, str) and inner_token.startswith('data: '):
-                        try:
-                            inner_data = json.loads(inner_token[6:])
-                            # 过滤掉 [DONE] 标记
-                            if inner_data.get('token') == '[DONE]' or (isinstance(inner_data.get('token'), str) and '[DONE]' in inner_data.get('token', '')):
-                                pass  # 不添加 [DONE]
-                            elif 'token' in inner_data:
-                                full_content += inner_data['token']
-                        except:
-                            # 不是 JSON，直接添加（但要过滤 [DONE]）
-                            if '[DONE]' not in inner_token:
-                                full_content += inner_token
-                    else:
-                        # 过滤掉 [DONE]
-                        if '[DONE]' not in inner_token:
-                            full_content += inner_token
+                    inner_token = data['workflow_steps']
+                    full_content += inner_token
             else:
                 # 普通 token，直接添加（过滤 [DONE]）
                 if '[DONE]' not in token:

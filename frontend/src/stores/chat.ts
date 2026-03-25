@@ -414,7 +414,13 @@ export const useChatStore = defineStore('chat', {
           citations: [],
           confidence: 0,
           retrieval_info: {
-            workflow_steps: [], // 初始为空的工作流步骤
+            workflow_steps: [
+              { step: 'process_query', status: 'pending' },
+              { step: 'detect_intent', status: 'pending' },
+              { step: 'retrieve', status: 'pending' },
+              { step: 'rerank', status: 'pending' },
+              { step: 'generate', status: 'pending' }
+            ],
             current_state: 'running'
           },
           created_at: new Date().toISOString()
@@ -453,20 +459,104 @@ export const useChatStore = defineStore('chat', {
                       
                       // 处理工作流步骤信息
                       if (innerData.workflow_steps) {
-                        this.totalWorkflowSteps = innerData.workflow_steps.length
-                        this.currentWorkflowSteps = innerData.workflow_steps
+                        // 检查workflow_steps是否是字符串（查询结果）
+                        if (typeof innerData.workflow_steps === 'string') {
+                          // 这是查询结果，添加到消息内容中
+                          fullContent += innerData.workflow_steps
+                          // 更新临时助手消息
+                          const msgIndex = this.messages.findIndex(m => m.id === tempAssistantMessageId)
+                          if (msgIndex > -1) {
+                            this.messages[msgIndex].content = fullContent
+                            // 保持工作流步骤列表的显示
+                            if (!this.messages[msgIndex].retrieval_info) {
+                              this.messages[msgIndex].retrieval_info = {
+                                workflow_steps: [
+                                  { step: 'process_query', status: 'completed' },
+                                  { step: 'detect_intent', status: 'completed' },
+                                  { step: 'retrieve', status: 'completed' },
+                                  { step: 'rerank', status: 'completed' },
+                                  { step: 'generate', status: 'completed' }
+                                ],
+                                current_state: 'completed'
+                              }
+                            } else {
+                              // 更新工作流状态为完成
+                              this.messages[msgIndex].retrieval_info.current_state = 'completed'
+                              // 确保所有步骤都标记为完成
+                              if (this.messages[msgIndex].retrieval_info.workflow_steps) {
+                                this.messages[msgIndex].retrieval_info.workflow_steps.forEach((step: any) => {
+                                  step.status = 'completed'
+                                })
+                              }
+                            }
+                          }
+                        } else {
+                          // 这是工作流步骤列表
+                          this.totalWorkflowSteps = innerData.workflow_steps.length
+                          this.currentWorkflowSteps = innerData.workflow_steps
+                          // 实时更新消息中的工作流步骤
+                          const msgIndex = this.messages.findIndex(m => m.id === tempAssistantMessageId)
+                          if (msgIndex > -1) {
+                            this.messages[msgIndex].retrieval_info = {
+                              workflow_steps: innerData.workflow_steps,
+                              current_state: 'running'
+                            }
+                          }
+                        }
+                      } else if (innerData.current_step) {
+                        // 提取current_step中的step属性
+                        const stepName = innerData.current_step.step || innerData.current_step
+                        this.currentWorkflowStep = stepName
+                        // 计算步骤索引
+                        let stepIndex = 0
+                        if (stepName === 'process_query') {
+                          stepIndex = 0
+                        } else if (stepName === 'detect_intent') {
+                          stepIndex = 1
+                        } else if (stepName === 'retrieve') {
+                          stepIndex = 2
+                        } else if (stepName === 'rerank') {
+                          stepIndex = 3
+                        } else if (stepName === 'generate') {
+                          stepIndex = 4
+                        }
+                        this.currentWorkflowStepIndex = stepIndex
+                        // 设置总步骤数
+                        this.totalWorkflowSteps = 5
+                        
+                        // 检查是否是完成状态
+                        const isCompleted = innerData.current_step.status === 'completed'
+                        
                         // 实时更新消息中的工作流步骤
                         const msgIndex = this.messages.findIndex(m => m.id === tempAssistantMessageId)
                         if (msgIndex > -1) {
+                          // 获取或创建工作流步骤列表
+                          let workflowSteps = []
+                          if (this.messages[msgIndex].retrieval_info?.workflow_steps) {
+                            workflowSteps = this.messages[msgIndex].retrieval_info.workflow_steps
+                          } else {
+                            // 创建默认的工作流步骤列表
+                            workflowSteps = [
+                              { step: 'process_query', status: 'pending' },
+                              { step: 'detect_intent', status: 'pending' },
+                              { step: 'retrieve', status: 'pending' },
+                              { step: 'rerank', status: 'pending' },
+                              { step: 'generate', status: 'pending' }
+                            ]
+                          }
+                          
+                          // 更新步骤状态
+                          for (let i = 0; i <= stepIndex; i++) {
+                            if (i < workflowSteps.length) {
+                              workflowSteps[i].status = i === stepIndex ? (isCompleted ? 'completed' : 'running') : 'completed'
+                            }
+                          }
+                          
                           this.messages[msgIndex].retrieval_info = {
-                            workflow_steps: innerData.workflow_steps,
-                            current_state: 'running'
+                            workflow_steps: workflowSteps,
+                            current_state: isCompleted ? 'completed' : 'running'
                           }
                         }
-                      }
-                      if (innerData.current_step) {
-                        this.currentWorkflowStep = innerData.current_step
-                        this.currentWorkflowStepIndex = innerData.step_index || 0
                       }
                       
                       // 处理消息 ID
